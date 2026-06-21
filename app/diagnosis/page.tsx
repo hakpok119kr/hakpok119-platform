@@ -1,0 +1,20 @@
+import Link from 'next/link';
+
+const items = ['학교폭력 해당성 진단','학교장 자체해결 가능성 진단','증거능력 진단','조치수위 예측','4호 이상 위험도 진단','생활기록부 영향 진단','대학입시 영향 진단','행정심판 가능성 진단'];
+
+export default function DiagnosisPage() {
+  return (
+    <div>
+      <h1 className="mb-6 text-3xl font-black">무료진단</h1>
+      <div className="grid gap-4 md:grid-cols-2">
+        {items.map((item, i) => (
+          <div key={item} className="card">
+            <h2 className="text-xl font-bold">{item}</h2>
+            <p className="mt-2 text-sm text-slate-600">입력내용을 기준으로 1차 검토자료를 생성합니다.</p>
+            <Link href={`/diagnosis/D${String(i+1).padStart(2,'0')}`} className="btn-primary mt-4">진단 시작</Link>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

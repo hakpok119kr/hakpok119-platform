@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { background:#f8fafc; color:#0f172a; }
+.card { @apply bg-white rounded-2xl border border-slate-200 shadow-sm p-5; }
+.btn-primary { @apply inline-flex items-center justify-center rounded-xl bg-navy px-5 py-3 text-white font-semibold hover:opacity-90; }
+.btn-outline { @apply inline-flex items-center justify-center rounded-xl border border-slate-300 px-5 py-3 font-semibold hover:bg-slate-50; }
