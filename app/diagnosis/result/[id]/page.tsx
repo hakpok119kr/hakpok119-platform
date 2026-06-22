@@ -16,6 +16,8 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
   const [isLoaded, setIsLoaded] = useState(false);
 
   const handlePrint = () => {
+    console.log('PDF print clicked');
+    alert('PDF 저장을 위해 인쇄창을 엽니다.');
     window.print();
   };
 
@@ -68,8 +70,8 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
       )}
 
       <div className="mt-5 flex flex-wrap gap-3 print:hidden">
-        {diagnosis ? (
-          <button onClick={handlePrint} className="btn-outline">
+        {isLoaded && diagnosis ? (
+          <button type="button" onClick={handlePrint} className="btn-outline">
             PDF 저장
           </button>
         ) : null}
