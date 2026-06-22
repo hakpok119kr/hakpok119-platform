@@ -281,17 +281,20 @@ const getCommonChecklist = (analysis: ContentAnalysis) => {
 
 const getD02Message = (analysis: ContentAnalysis): DiagnosisMessage => {
   const positiveChecks = [
-    analysis.hasApology,
-    analysis.hasReconciliation,
-    analysis.hasAgreement,
-    analysis.hasOneTimeIssue,
-    analysis.hasNoPropertyDamage,
-    analysis.hasNoRetaliation,
-    analysis.hasNoTwoWeekDiagnosis,
-    analysis.hasRecovery,
-    analysis.hasPreventionPromise,
+    { label: '사과', matched: analysis.hasApology },
+    { label: '화해', matched: analysis.hasReconciliation },
+    { label: '합의', matched: analysis.hasAgreement },
+    { label: '1회 발생', matched: analysis.hasOneTimeIssue },
+    { label: '재산피해 없음', matched: analysis.hasNoPropertyDamage },
+    { label: '보복행위 없음', matched: analysis.hasNoRetaliation },
+    { label: '2주 이상 진단서 없음', matched: analysis.hasNoTwoWeekDiagnosis },
+    { label: '피해 회복', matched: analysis.hasRecovery },
+    { label: '재발 방지 약속', matched: analysis.hasPreventionPromise },
   ];
-  const positiveCount = positiveChecks.filter(Boolean).length;
+  const matchedPositiveLabels = positiveChecks
+    .filter((check) => check.matched)
+    .map((check) => check.label);
+  const positiveCount = matchedPositiveLabels.length;
 
   const seriousCase =
     analysis.hasTwoWeekDiagnosis ||
@@ -318,7 +321,7 @@ const getD02Message = (analysis: ContentAnalysis): DiagnosisMessage => {
   if (positiveCount >= 2) {
     return {
       judgment: '학교장 자체해결 가능성이 높습니다.',
-      reason: `사과, 화해, 합의, 1회 발생, 재산피해 없음, 보복행위 없음, 2주 이상 진단서 없음, 피해 회복, 재발 방지 약속 중 ${positiveCount}개 긍정 요소가 확인됩니다.`,
+      reason: `${matchedPositiveLabels.join(', ')} 등의 긍정 요소가 확인됩니다.`,
       checklist:
         '피해 학생 및 보호자의 자체해결 동의 여부, 사과의 진정성, 피해 회복 정도, 재발 방지 약속의 구체성, 학교의 자체해결 요건 확인 절차를 추가로 확인해 주세요.',
     };
