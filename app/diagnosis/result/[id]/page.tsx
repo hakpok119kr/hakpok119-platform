@@ -12,8 +12,11 @@ type DiagnosisResult = {
   resultSections?: {
     diagnosisType: string;
     inputSummary: string;
+    factorAnalysis?: string;
     expectedMeasure: string;
     reasons: string;
+    mitigatingFactors?: string;
+    aggravatingFactors?: string;
     caution: string;
     nextSteps: string;
   };
@@ -67,6 +70,13 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               </section>
 
               <section>
+                <h2 className="mb-2 font-bold">심의 판단요소 분석</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.factorAnalysis ?? '심의 판단요소 분석이 저장되지 않았습니다.'}
+                </p>
+              </section>
+
+              <section>
                 <h2 className="mb-2 font-bold">예상 조치수위</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
                   {diagnosis.resultSections.expectedMeasure}
@@ -77,6 +87,20 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                 <h2 className="mb-2 font-bold">판단 이유</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
                   {diagnosis.resultSections.reasons}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">감경 가능 요소</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.mitigatingFactors ?? '감경 가능 요소가 저장되지 않았습니다.'}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">가중 위험 요소</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.aggravatingFactors ?? '가중 위험 요소가 저장되지 않았습니다.'}
                 </p>
               </section>
 
