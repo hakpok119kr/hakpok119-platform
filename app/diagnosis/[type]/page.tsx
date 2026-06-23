@@ -37,6 +37,7 @@ type DiagnosisMessage = {
 };
 
 type MeasureOptions = {
+  position: 'perpetrator' | 'victim';
   incidentContent: string;
   damageLevel: 'minor' | 'middle' | 'severe';
   frequency: 'once' | 'two-three' | 'repeated';
@@ -63,6 +64,11 @@ type MeasureOptions = {
   statementSpecificity: 'low' | 'middle' | 'high';
   objectiveEvidence: boolean;
   factualDispute: boolean;
+  unclearSchoolViolence: boolean;
+  simpleConflict: boolean;
+  mutualConflict: boolean;
+  witnessConflict: boolean;
+  lowMeasureNeed: boolean;
 };
 
 type MeasureResultSections = {
@@ -980,6 +986,9 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
   if (!options.hasEvidence || !options.objectiveEvidence) {
     cautions.push('증거자료 또는 객관자료가 부족하면 조치수위를 단정하기 어렵고 사실관계 정리가 먼저 필요합니다.');
   }
+  if (options.position === 'victim' && (options.unclearSchoolViolence || options.lowMeasureNeed)) {
+    cautions.push('피해학생 측에서는 학교폭력 아님 또는 조치없음 가능성이 표시되더라도 증거 보강, 사실관계 정리, 행정심판 검토 가능성을 함께 확인할 필요가 있습니다.');
+  }
   if (options.statementSpecificity === 'low') {
     cautions.push('피해진술이 구체적이지 않으면 일시, 장소, 행위자, 목격자, 피해 상태를 보완해야 합니다.');
   }
@@ -1008,18 +1017,33 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
     options.sexualIssue ||
     options.victimDisabled ||
     options.weaponUse;
-  let expectedMeasure = '낮음: 1~3호 조치 가능성';
+  const schoolViolenceUnclear =
+    !options.intentional &&
+    !options.continued &&
+    options.frequency === 'once' &&
+    options.damageLevel === 'minor' &&
+    (options.simpleConflict || options.unclearSchoolViolence) &&
+    !highRiskFlags;
+  const noMeasureNeed =
+    (!options.hasEvidence || !options.objectiveEvidence || options.statementSpecificity === 'low') &&
+    (options.witnessConflict || options.mutualConflict || options.lowMeasureNeed || options.factualDispute) &&
+    !highRiskFlags;
+  let expectedMeasure = '1~3호 가능성';
 
-  if (highRiskFlags || totalScore >= 17) {
-    expectedMeasure = '높음: 6~9호 조치 가능성';
+  if (schoolViolenceUnclear) {
+    expectedMeasure = '학교폭력 아님 가능성';
+  } else if (noMeasureNeed) {
+    expectedMeasure = '조치없음 가능성';
+  } else if (highRiskFlags || totalScore >= 17) {
+    expectedMeasure = '6~9호 가능성';
   } else if (
     totalScore >= 11 ||
     (options.physicalViolence && options.damageLevel === 'severe') ||
     (options.physicalViolence && options.frequency === 'repeated' && options.intentional)
   ) {
-    expectedMeasure = '보통 이상: 4~5호 조치 가능성';
+    expectedMeasure = '4~5호 가능성';
   } else if (totalScore >= 6 || (options.verbalViolence && persistenceScore >= 3 && !options.apology)) {
-    expectedMeasure = '보통: 2~4호 조치 가능성';
+    expectedMeasure = '2~4호 가능성';
   }
 
   if (
@@ -1033,10 +1057,16 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
     !options.factualDispute &&
     !highRiskFlags
   ) {
-    expectedMeasure = '낮음: 1~3호 조치 가능성';
+    expectedMeasure = '1~3호 가능성';
   }
 
   reasons.push(`심각성 ${seriousnessScore}점, 지속성 ${persistenceScore}점, 고의성 ${intentionalityScore}점으로 1차 산정했습니다.`);
+  if (schoolViolenceUnclear) {
+    reasons.push('고의성·지속성이 부족하고 피해 정도가 경미하며 단순 갈등 또는 오해에 가까운 정황이 있어 학교폭력 해당성 자체가 불명확할 수 있습니다.');
+  }
+  if (noMeasureNeed) {
+    reasons.push('피해 주장 입증, 객관자료, 목격자 진술 일관성 또는 조치 필요성이 부족하여 조치없음 가능성을 별도 결론으로 표시했습니다.');
+  }
   if (remorseScore < 0 || reconciliationScore < 0 || guidanceScore < 0) {
     reasons.push('반성, 사과, 화해, 보호자 노력, 초범 여부는 감경 또는 선도 가능성 요소로 반영했습니다.');
   }
@@ -1057,9 +1087,11 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
     }`,
     `선도 가능성: ${guidanceScore}점 - 초범 여부, 보호자 노력, 이전 유사 사안을 함께 반영했습니다.`,
     `장애학생 피해 여부: ${disabledVictimBonus}점 - ${options.victimDisabled ? '가중 검토 대상입니다.' : '해당 없음으로 입력되었습니다.'}`,
+    `학교폭력 해당성·조치 필요성: ${schoolViolenceUnclear ? '학교폭력 해당성 불명확 가능성이 있습니다.' : noMeasureNeed ? '조치 필요성이 낮거나 입증이 부족할 수 있습니다.' : '별도 배제 사유는 제한적으로 입력되었습니다.'}`,
   ].join('\n');
 
   const inputSummary = [
+    `현재 입장: ${options.position === 'perpetrator' ? '가해지목학생 측' : '피해학생 측'}`,
     `사건 내용: ${options.incidentContent}`,
     `피해 정도: ${getDamageLevelLabel(options.damageLevel)}`,
     `발생 횟수: ${getFrequencyLabel(options.frequency)}`,
@@ -1086,7 +1118,24 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
     `피해진술 구체성: ${getStatementSpecificityLabel(options.statementSpecificity)}`,
     `목격자 또는 객관자료 여부: ${options.objectiveEvidence ? '예' : '아니오'}`,
     `사실관계 다툼 여부: ${options.factualDispute ? '예' : '아니오'}`,
+    `학교폭력 해당성 불명확 여부: ${options.unclearSchoolViolence ? '예' : '아니오'}`,
+    `단순 갈등 또는 오해 여부: ${options.simpleConflict ? '예' : '아니오'}`,
+    `쌍방 갈등 성격 여부: ${options.mutualConflict ? '예' : '아니오'}`,
+    `목격자 진술 불일치 여부: ${options.witnessConflict ? '예' : '아니오'}`,
+    `조치 필요성 낮음 여부: ${options.lowMeasureNeed ? '예' : '아니오'}`,
   ].join('\n');
+  const noActionExplanation =
+    expectedMeasure.includes('학교폭력 아님') || expectedMeasure.includes('조치없음')
+      ? '\n학교폭력 아님과 조치없음은 1호보다 낮은 단계가 아니라, 학교폭력 해당성 또는 가해학생 조치 필요성이 인정되지 않을 수 있다는 별도 결론입니다.'
+      : '';
+  const positionNextStep =
+    options.position === 'perpetrator' &&
+    (expectedMeasure.includes('학교폭력 아님') || expectedMeasure.includes('조치없음'))
+      ? '\n가해지목학생 측은 사실관계, 증거 부족, 고의성 부족, 지속성 부족, 단순 갈등 또는 오해 정황을 시간순으로 정리해 주세요.'
+      : options.position === 'victim' &&
+          (expectedMeasure.includes('학교폭력 아님') || expectedMeasure.includes('조치없음'))
+        ? '\n피해학생 측은 피해 진술의 구체성, 객관자료, 목격자 진술, 반복성·고의성 정황을 보강하고 필요 시 행정심판 가능성을 검토해 주세요.'
+        : '';
 
   return {
     diagnosisType: '조치수위 예측 V2',
@@ -1096,9 +1145,9 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
     reasons: reasons.join('\n'),
     mitigatingFactors: joinLines(mitigatingFactors, '뚜렷한 감경 요소가 입력되지 않았습니다.'),
     aggravatingFactors: joinLines(aggravatingFactors, '중대한 가중 위험 요소는 제한적으로 입력되었습니다.'),
-    caution: cautions.join('\n'),
+    caution: `${cautions.join('\n')}${noActionExplanation}`,
     nextSteps:
-      '사건 일시, 장소, 관련 학생, 피해 상태, 증거자료 목록을 시간순으로 정리한 뒤 상담예약을 통해 실제 대응방향을 점검해 주세요.\n4호 이상 조치 가능성이 있는 경우 생활기록부, 진학, 행정심판 가능성까지 함께 검토가 필요합니다.',
+      `사건 일시, 장소, 관련 학생, 피해 상태, 증거자료 목록을 시간순으로 정리한 뒤 상담예약을 통해 실제 대응방향을 점검해 주세요.\n4호 이상 조치 가능성이 있는 경우 생활기록부, 진학, 행정심판 가능성까지 함께 검토가 필요합니다.${positionNextStep}`,
   };
 };
 
@@ -1172,6 +1221,7 @@ const buildResult = (type: string, content: string) => {
 export default function DiagnosisInputPage({ params }: { params: { type: string } }) {
   const [content, setContent] = useState('');
   const [measureOptions, setMeasureOptions] = useState<MeasureOptions>({
+    position: 'perpetrator',
     incidentContent: '',
     damageLevel: 'minor',
     frequency: 'once',
@@ -1198,6 +1248,11 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     statementSpecificity: 'middle',
     objectiveEvidence: false,
     factualDispute: false,
+    unclearSchoolViolence: false,
+    simpleConflict: false,
+    mutualConflict: false,
+    witnessConflict: false,
+    lowMeasureNeed: false,
   });
   const [adminAppealOptions, setAdminAppealOptions] = useState<AdminAppealOptions>({
     position: 'perpetrator',
@@ -1617,6 +1672,19 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         <div className="space-y-5">
           <section className="space-y-4">
             <h2 className="text-lg font-black">기본 사실관계</h2>
+            <fieldset className="rounded-xl border p-4">
+              <legend className="px-1 font-bold">현재 입장</legend>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="measurePosition" checked={measureOptions.position === 'perpetrator'} onChange={() => updateMeasureOption('position', 'perpetrator')} />
+                  가해지목학생 측
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="measurePosition" checked={measureOptions.position === 'victim'} onChange={() => updateMeasureOption('position', 'victim')} />
+                  피해학생 측
+                </label>
+              </div>
+            </fieldset>
             <div>
               <label className="mb-2 block font-bold">사건 내용</label>
               <textarea
@@ -1762,6 +1830,11 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
                 ['hasEvidence', '증거자료 보유 여부'],
                 ['objectiveEvidence', '목격자 또는 객관자료 여부'],
                 ['factualDispute', '사실관계 다툼 여부'],
+                ['unclearSchoolViolence', '학교폭력 해당성 자체가 불명확함'],
+                ['simpleConflict', '단순 갈등 또는 오해에 가까움'],
+                ['mutualConflict', '쌍방 갈등 성격'],
+                ['witnessConflict', '목격자 진술 불일치'],
+                ['lowMeasureNeed', '조치 필요성이 낮음'],
               ].map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 rounded-xl border p-3">
                   <input
