@@ -172,6 +172,8 @@ const preparationDocuments = [
 ];
 
 const offenderMeasureOptions = [
+  '조치없음',
+  '학교폭력 아님',
   '1호 서면사과',
   '2호 접촉·협박·보복행위 금지',
   '3호 교내봉사',
@@ -798,7 +800,19 @@ const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealRes
   const reviewStatusLabel = getReviewStatusLabel(options.reviewStatus);
   const offenderSummary = joinLines(options.offenderMeasures, '입력된 가해학생 조치가 없습니다.');
   const victimSummary = joinLines(options.victimMeasures, '입력된 피해학생 보호조치가 없습니다.');
-  const decisionSummary = [`가해학생 조치: ${offenderSummary}`, `피해학생 보호조치: ${victimSummary}`].join('\n');
+  const hasNoOffenderAction =
+    options.offenderMeasures.includes('조치없음') ||
+    options.offenderMeasures.includes('학교폭력 아님');
+  const noActionDecisionNote = hasNoOffenderAction
+    ? '조치없음 또는 학교폭력 아님은 1호보다 낮은 조치가 아니라, 학교폭력으로 조치할 정도로 인정되지 않았거나 가해학생 조치가 내려지지 않은 별도 결론으로 검토합니다.'
+    : '';
+  const decisionSummary = [
+    `가해학생 조치: ${offenderSummary}`,
+    `피해학생 보호조치: ${victimSummary}`,
+    noActionDecisionNote,
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   let filingPeriodReview = '행정심판 단계 전입니다. 먼저 심의 대응과 의견서 준비가 필요합니다.';
   if (options.reviewStatus === 'completed-before-notice') {
@@ -838,6 +852,7 @@ const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealRes
 
   if (options.position === 'perpetrator' && highOffenderMeasures) score += 2;
   if (weakVictimProtection) score += 2;
+  if (options.position === 'victim' && hasNoOffenderAction) score += 4;
 
   let appealNeed = '낮음';
   if (score >= 10 || urgencyCount >= 2) {
@@ -852,12 +867,33 @@ const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealRes
     appealNeed = score >= 5 ? '보통' : '낮음';
   }
 
+  if (options.position === 'perpetrator' && hasNoOffenderAction) {
+    appealNeed = '낮음';
+  }
+
   const nextSteps =
-    options.reviewStatus === 'before-review'
+    options.position === 'victim' && hasNoOffenderAction
+      ? '조치없음 또는 학교폭력 아님 결정에 불복하려면 학교폭력 해당성, 사실관계 인정 여부, 증거 판단 누락, 피해 진술 신빙성, 조치없음 결정의 타당성을 중심으로 재심 또는 행정심판 필요성을 검토해 주세요.'
+      : options.reviewStatus === 'before-review'
       ? '아직 행정심판 단계 전이므로 심의 전 의견서, 증거목록, 진술 정리, 보호조치 또는 감경자료를 먼저 준비해 주세요.'
       : options.reviewStatus === 'completed-before-notice'
         ? '조치결정 통지서를 수령하는 즉시 통지일, 조치 내용, 이유 기재를 확인하고 행정심판 청구기간을 계산해 주세요.'
         : '조치결정 통지서, 사안조사 보고서, 심의자료, 증거자료를 모아 청구취지와 집행정지 필요성을 함께 검토해 주세요.';
+  const noActionVictimIssue = options.position === 'victim' && hasNoOffenderAction
+    ? [
+        '조치없음 결정에 대한 불복 쟁점',
+        '학교폭력 해당성 판단',
+        '사실관계 인정 여부',
+        '증거 판단 누락 여부',
+        '피해 진술 신빙성',
+        '조치없음 결정의 타당성',
+        '재심 또는 행정심판 검토 필요성',
+      ].join('\n')
+    : '';
+  const noActionPerpetratorCaution = options.position === 'perpetrator' && hasNoOffenderAction
+    ? '가해학생 측에서 조치없음 또는 학교폭력 아님 결정을 받은 경우 본인 행정심판 필요성은 낮은 편이나, 피해학생 측이 조치없음 결정에 불복하여 행정심판 등을 검토할 가능성은 있습니다.'
+    : '';
+  const caution = [...adminAppealCautions, noActionPerpetratorCaution].filter(Boolean).join('\n');
 
   return {
     diagnosisType: '행정심판 가능성 V2',
@@ -867,11 +903,14 @@ const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealRes
     decisionSummary,
     filingPeriodReview,
     appealNeed,
-    objectionReasons: joinLines(options.objectionReasons, '입력된 주요 불복 사유가 없습니다.'),
+    objectionReasons: joinLines(
+      [...options.objectionReasons, noActionVictimIssue].filter(Boolean),
+      '입력된 주요 불복 사유가 없습니다.'
+    ),
     procedureIssues: joinLines(options.procedureIssues, '입력된 절차상 쟁점이 없습니다.'),
     evidenceIssues: joinLines(options.evidenceIssues, '입력된 사실관계·증거 쟁점이 없습니다.'),
     proportionalityIssues: joinLines(options.proportionalityIssues, '입력된 비례원칙 쟁점이 없습니다.'),
-    caution: adminAppealCautions.join('\n'),
+    caution,
     nextSteps,
     preparationDocuments: preparationDocuments.join('\n'),
   };
