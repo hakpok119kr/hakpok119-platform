@@ -77,11 +77,141 @@ type MeasureResultSections = {
   nextSteps: string;
 };
 
+type AdminAppealOptions = {
+  position: 'perpetrator' | 'victim';
+  reviewStatus: 'before-review' | 'completed-before-notice' | 'notice-received';
+  noticeDate: string;
+  offenderMeasures: string[];
+  victimMeasures: string[];
+  objectionReasons: string[];
+  procedureIssues: string[];
+  evidenceIssues: string[];
+  proportionalityIssues: string[];
+  urgency: string[];
+};
+
+type AdminAppealResultSections = {
+  diagnosisType: string;
+  adminAppealV2: true;
+  currentPosition: string;
+  reviewStatus: string;
+  decisionSummary: string;
+  filingPeriodReview: string;
+  appealNeed: string;
+  objectionReasons: string;
+  procedureIssues: string;
+  evidenceIssues: string;
+  proportionalityIssues: string;
+  caution: string;
+  nextSteps: string;
+  preparationDocuments: string;
+};
+
 const notice =
   '본 결과는 입력 내용을 기준으로 한 1차 검토자료이며, 실제 판단은 학교의 조사 및 심의 결과에 따라 달라질 수 있습니다.';
 
 const measureNotice =
   '이 결과는 학교폭력예방법 제17조, 같은 법 시행령 제19조 및 가해학생 조치별 적용 세부기준의 판단요소를 참고한 1차 검토자료이며, 실제 조치는 교육지원청 학교폭력대책심의위원회의 판단에 따라 달라질 수 있습니다.';
+
+const adminAppealCautions = [
+  '본 결과는 입력내용을 기준으로 한 1차 검토자료이며, 실제 행정심판 인용 가능성을 보장하지 않습니다.',
+  '행정심판은 원칙적으로 처분이 있음을 안 날부터 90일 이내, 처분이 있은 날부터 180일 이내에 청구해야 하므로 통지일 확인이 중요합니다.',
+  '4호 이상 조치, 출석정지, 학급교체, 전학 등은 생활기록부와 진학 영향까지 함께 검토가 필요합니다.',
+  '피해학생 측은 조치가 낮거나 보호조치가 부족한 경우, 가해학생 측은 조치가 과중하거나 사실관계·절차상 문제가 있는 경우 행정심판 검토가 필요할 수 있습니다.',
+];
+
+const preparationDocuments = [
+  '조치결정 통지서',
+  '학교폭력 사안조사 보고서',
+  '심의위원회 회의록 또는 심의 관련 자료',
+  '학생 확인서 및 진술서',
+  '보호자 의견서',
+  '카카오톡, 문자, 녹음, CCTV, 사진 등 증거자료',
+  '진단서, 상담확인서, 치료자료',
+  '생활기록부 또는 진학 관련 자료',
+  '기존 제출 의견서 및 반성문, 탄원서 등',
+];
+
+const offenderMeasureOptions = [
+  '1호 서면사과',
+  '2호 접촉·협박·보복행위 금지',
+  '3호 교내봉사',
+  '4호 사회봉사',
+  '5호 특별교육 또는 심리치료',
+  '6호 출석정지',
+  '7호 학급교체',
+  '8호 전학',
+  '9호 퇴학',
+  '아직 결정 전',
+  '모름',
+];
+
+const victimMeasureOptions = [
+  '심리상담 및 조언',
+  '일시보호',
+  '치료 및 치료를 위한 요양',
+  '학급교체',
+  '그 밖의 보호조치',
+  '보호조치 없음',
+  '아직 결정 전',
+  '모름',
+];
+
+const perpetratorObjectionOptions = [
+  '조치가 너무 높음',
+  '학교폭력 인정 자체를 다툼',
+  '사실관계가 다름',
+  '고의성·지속성이 과대평가됨',
+  '반성·화해 등 감경요소가 반영되지 않음',
+  '절차상 문제가 있음',
+];
+
+const victimObjectionOptions = [
+  '가해학생 조치가 너무 낮음',
+  '피해 정도가 제대로 반영되지 않음',
+  '지속성·고의성이 과소평가됨',
+  '보호조치가 부족함',
+  '2차 피해 또는 보복 우려가 반영되지 않음',
+  '절차상 문제가 있음',
+];
+
+const procedureIssueOptions = [
+  '진술 기회 부족',
+  '자료 열람 또는 의견 제출 기회 부족',
+  '심의 통지 문제',
+  '조사 내용 누락',
+  '증거 판단 누락',
+  '이해관계자 참여 문제',
+  '절차상 문제 없음',
+  '잘 모르겠음',
+];
+
+const evidenceIssueOptions = [
+  '사실관계가 다름',
+  '핵심 증거가 반영되지 않음',
+  '목격자 진술이 반영되지 않음',
+  '카카오톡, 녹음, CCTV 등 객관자료가 있음',
+  '상대방 진술 신빙성에 문제가 있음',
+  '증거가 부족함',
+  '잘 모르겠음',
+];
+
+const proportionalityIssueOptions = [
+  '조치가 사안에 비해 과도함',
+  '조치가 사안에 비해 약함',
+  '유사 사례와 형평이 맞지 않음',
+  '생기부 또는 진학 영향이 큼',
+  '피해회복 또는 재발방지 필요성이 큼',
+  '잘 모르겠음',
+];
+
+const urgencyOptions = [
+  '집행정지 필요성 있음',
+  '생기부 기재 또는 진학 영향 우려',
+  '전학·출석정지 등 즉시 영향 있음',
+  '긴급성 낮음',
+  '잘 모르겠음',
+];
 
 const includesAny = (content: string, keywords: string[]) =>
   keywords.some((keyword) => content.includes(keyword));
@@ -410,6 +540,116 @@ const getStatementSpecificityLabel = (
 const joinLines = (items: string[], fallback: string) =>
   items.length > 0 ? items.join('\n') : fallback;
 
+const getPositionLabel = (position: AdminAppealOptions['position']) =>
+  position === 'perpetrator' ? '가해학생 측' : '피해학생 측';
+
+const getReviewStatusLabel = (reviewStatus: AdminAppealOptions['reviewStatus']) => {
+  if (reviewStatus === 'before-review') return '심의 전';
+  if (reviewStatus === 'completed-before-notice') return '심의 완료, 통지 전';
+  return '조치결정 통지 받음';
+};
+
+const getMeaningfulCount = (items: string[], excludedLabels: string[]) =>
+  items.filter((item) => !excludedLabels.includes(item)).length;
+
+const toggleSelection = (items: string[], value: string) =>
+  items.includes(value) ? items.filter((item) => item !== value) : [...items, value];
+
+const getDaysFromNotice = (noticeDate: string) => {
+  if (!noticeDate) return null;
+
+  const date = new Date(`${noticeDate}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.floor((todayStart.getTime() - date.getTime()) / 86400000);
+};
+
+const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealResultSections => {
+  const positionLabel = getPositionLabel(options.position);
+  const reviewStatusLabel = getReviewStatusLabel(options.reviewStatus);
+  const offenderSummary = joinLines(options.offenderMeasures, '입력된 가해학생 조치가 없습니다.');
+  const victimSummary = joinLines(options.victimMeasures, '입력된 피해학생 보호조치가 없습니다.');
+  const decisionSummary = [`가해학생 조치: ${offenderSummary}`, `피해학생 보호조치: ${victimSummary}`].join('\n');
+
+  let filingPeriodReview = '행정심판 단계 전입니다. 먼저 심의 대응과 의견서 준비가 필요합니다.';
+  if (options.reviewStatus === 'completed-before-notice') {
+    filingPeriodReview = '심의는 완료되었으나 통지 전입니다. 조치결정 통지서 수령 후 청구기간 계산이 필요합니다.';
+  }
+  if (options.reviewStatus === 'notice-received') {
+    const daysFromNotice = getDaysFromNotice(options.noticeDate);
+    if (daysFromNotice === null) {
+      filingPeriodReview = '조치결정 통지일이 입력되지 않았습니다. 통지일 확인 후 90일·180일 기간을 계산해야 합니다.';
+    } else if (daysFromNotice < 0) {
+      filingPeriodReview = '통지일이 현재 날짜보다 늦게 입력되었습니다. 날짜를 다시 확인해 주세요.';
+    } else if (daysFromNotice <= 90) {
+      filingPeriodReview = `청구기간 내 가능성 있음: 통지일로부터 약 ${daysFromNotice}일 경과했습니다.`;
+    } else {
+      filingPeriodReview = `기간 도과 위험 또는 청구기간 검토 필요: 통지일로부터 약 ${daysFromNotice}일 경과했습니다.`;
+    }
+  }
+
+  const objectionCount = getMeaningfulCount(options.objectionReasons, ['잘 모르겠음']);
+  const procedureCount = getMeaningfulCount(options.procedureIssues, ['절차상 문제 없음', '잘 모르겠음']);
+  const evidenceCount = getMeaningfulCount(options.evidenceIssues, ['잘 모르겠음']);
+  const proportionalityCount = getMeaningfulCount(options.proportionalityIssues, ['잘 모르겠음']);
+  const urgencyCount = getMeaningfulCount(options.urgency, ['긴급성 낮음', '잘 모르겠음']);
+
+  let score = objectionCount + procedureCount + evidenceCount + proportionalityCount + urgencyCount;
+  if (options.reviewStatus === 'before-review') score = Math.max(0, score - 3);
+  if (options.reviewStatus === 'completed-before-notice') score = Math.max(1, score - 1);
+
+  const highOffenderMeasures = options.offenderMeasures.some((measure) =>
+    ['4호 사회봉사', '5호 특별교육 또는 심리치료', '6호 출석정지', '7호 학급교체', '8호 전학', '9호 퇴학'].includes(measure)
+  );
+  const weakVictimProtection =
+    options.position === 'victim' &&
+    (options.victimMeasures.includes('보호조치 없음') ||
+      options.objectionReasons.includes('보호조치가 부족함') ||
+      options.objectionReasons.includes('2차 피해 또는 보복 우려가 반영되지 않음'));
+
+  if (options.position === 'perpetrator' && highOffenderMeasures) score += 2;
+  if (weakVictimProtection) score += 2;
+
+  let appealNeed = '낮음';
+  if (score >= 10 || urgencyCount >= 2) {
+    appealNeed = '긴급 검토 필요';
+  } else if (score >= 7) {
+    appealNeed = '높음';
+  } else if (score >= 3) {
+    appealNeed = '보통';
+  }
+
+  if (options.reviewStatus === 'before-review') {
+    appealNeed = score >= 5 ? '보통' : '낮음';
+  }
+
+  const nextSteps =
+    options.reviewStatus === 'before-review'
+      ? '아직 행정심판 단계 전이므로 심의 전 의견서, 증거목록, 진술 정리, 보호조치 또는 감경자료를 먼저 준비해 주세요.'
+      : options.reviewStatus === 'completed-before-notice'
+        ? '조치결정 통지서를 수령하는 즉시 통지일, 조치 내용, 이유 기재를 확인하고 행정심판 청구기간을 계산해 주세요.'
+        : '조치결정 통지서, 사안조사 보고서, 심의자료, 증거자료를 모아 청구취지와 집행정지 필요성을 함께 검토해 주세요.';
+
+  return {
+    diagnosisType: '행정심판 가능성 V2',
+    adminAppealV2: true,
+    currentPosition: positionLabel,
+    reviewStatus: reviewStatusLabel,
+    decisionSummary,
+    filingPeriodReview,
+    appealNeed,
+    objectionReasons: joinLines(options.objectionReasons, '입력된 주요 불복 사유가 없습니다.'),
+    procedureIssues: joinLines(options.procedureIssues, '입력된 절차상 쟁점이 없습니다.'),
+    evidenceIssues: joinLines(options.evidenceIssues, '입력된 사실관계·증거 쟁점이 없습니다.'),
+    proportionalityIssues: joinLines(options.proportionalityIssues, '입력된 비례원칙 쟁점이 없습니다.'),
+    caution: adminAppealCautions.join('\n'),
+    nextSteps,
+    preparationDocuments: preparationDocuments.join('\n'),
+  };
+};
+
 const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections => {
   const reasons: string[] = [];
   const aggravatingFactors: string[] = [];
@@ -693,13 +933,46 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     objectiveEvidence: false,
     factualDispute: false,
   });
+  const [adminAppealOptions, setAdminAppealOptions] = useState<AdminAppealOptions>({
+    position: 'perpetrator',
+    reviewStatus: 'before-review',
+    noticeDate: '',
+    offenderMeasures: ['아직 결정 전'],
+    victimMeasures: ['아직 결정 전'],
+    objectionReasons: [],
+    procedureIssues: [],
+    evidenceIssues: [],
+    proportionalityIssues: [],
+    urgency: [],
+  });
   const router = useRouter();
   const isMeasure = ['measure', 'action-level', 'D04'].includes(params.type);
+  const isAdminAppeal = ['D08', 'admin-appeal', 'appeal'].includes(params.type);
 
   const updateMeasureOption = <K extends keyof MeasureOptions>(key: K, value: MeasureOptions[K]) => {
     setMeasureOptions((previous) => ({
       ...previous,
       [key]: value,
+    }));
+  };
+
+  const updateAdminAppealOption = <K extends keyof AdminAppealOptions>(
+    key: K,
+    value: AdminAppealOptions[K]
+  ) => {
+    setAdminAppealOptions((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
+  };
+
+  const toggleAdminAppealOption = (
+    key: 'offenderMeasures' | 'victimMeasures' | 'objectionReasons' | 'procedureIssues' | 'evidenceIssues' | 'proportionalityIssues' | 'urgency',
+    value: string
+  ) => {
+    setAdminAppealOptions((previous) => ({
+      ...previous,
+      [key]: toggleSelection(previous[key], value),
     }));
   };
 
@@ -709,7 +982,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
       return;
     }
 
-    if (!isMeasure && !content.trim()) {
+    if (!isMeasure && !isAdminAppeal && !content.trim()) {
       alert('사건 내용을 입력해 주세요.');
       return;
     }
@@ -717,7 +990,16 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     const resultId = Date.now().toString();
     const storageKey = `${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`;
     const measureResult = isMeasure ? calculateMeasureResult(measureOptions) : null;
-    const result = measureResult
+    const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
+    const result = adminAppealResult
+      ? [
+          `행정심판 청구기간 검토: ${adminAppealResult.filingPeriodReview}`,
+          `행정심판 검토 필요성: ${adminAppealResult.appealNeed}`,
+          `주요 불복 사유: ${adminAppealResult.objectionReasons}`,
+          `주의사항: ${adminAppealResult.caution}`,
+          `다음 대응방향: ${adminAppealResult.nextSteps}`,
+        ].join('\n\n')
+      : measureResult
       ? [
           `예상 조치수위: ${measureResult.expectedMeasure}`,
           `심의 판단요소 분석: ${measureResult.factorAnalysis}`,
@@ -728,15 +1010,28 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `다음 대응방향: ${measureResult.nextSteps}`,
         ].join('\n\n')
       : buildResult(params.type, content);
-    const savedContent = measureResult ? measureResult.inputSummary : content;
+    const savedContent = adminAppealResult
+      ? [
+          `현재 입장: ${adminAppealResult.currentPosition}`,
+          `심의 진행 상태: ${adminAppealResult.reviewStatus}`,
+          `조치결정 통지일: ${adminAppealOptions.noticeDate || '미입력'}`,
+          adminAppealResult.decisionSummary,
+        ].join('\n')
+      : measureResult
+        ? measureResult.inputSummary
+        : content;
 
     sessionStorage.setItem(
       storageKey,
       JSON.stringify({
-        type: measureResult ? measureResult.diagnosisType : params.type,
+        type: adminAppealResult
+          ? adminAppealResult.diagnosisType
+          : measureResult
+            ? measureResult.diagnosisType
+            : params.type,
         content: savedContent,
         result,
-        resultSections: measureResult,
+        resultSections: adminAppealResult ?? measureResult,
       })
     );
 
@@ -746,10 +1041,128 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
   return (
     <div className="card">
       <h1 className="mb-6 text-2xl font-black">
-        무료진단 입력 - {isMeasure ? '조치수위 예측 V2' : params.type}
+        무료진단 입력 - {isMeasure ? '조치수위 예측 V2' : isAdminAppeal ? '행정심판 가능성 V2' : params.type}
       </h1>
 
-      {isMeasure ? (
+      {isAdminAppeal ? (
+        <div className="space-y-5">
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">1. 현재 입장</h2>
+            <div className="flex flex-wrap gap-3">
+              <label className="flex items-center gap-2 rounded-xl border p-3">
+                <input type="radio" name="position" checked={adminAppealOptions.position === 'perpetrator'} onChange={() => updateAdminAppealOption('position', 'perpetrator')} />
+                가해학생 측
+              </label>
+              <label className="flex items-center gap-2 rounded-xl border p-3">
+                <input type="radio" name="position" checked={adminAppealOptions.position === 'victim'} onChange={() => updateAdminAppealOption('position', 'victim')} />
+                피해학생 측
+              </label>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">2. 심의 진행 상태</h2>
+            <div className="flex flex-wrap gap-3">
+              {[
+                ['before-review', '심의 전'],
+                ['completed-before-notice', '심의 완료, 통지 전'],
+                ['notice-received', '조치결정 통지 받음'],
+              ].map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2 rounded-xl border p-3">
+                  <input
+                    type="radio"
+                    name="reviewStatus"
+                    checked={adminAppealOptions.reviewStatus === value}
+                    onChange={() => updateAdminAppealOption('reviewStatus', value as AdminAppealOptions['reviewStatus'])}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-2 text-lg font-black">3. 조치결정 통지일</h2>
+            <input
+              type="date"
+              className="w-full rounded-xl border p-3 md:w-auto"
+              value={adminAppealOptions.noticeDate}
+              onChange={(event) => updateAdminAppealOption('noticeDate', event.target.value)}
+            />
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">4. 가해학생 조치</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              {offenderMeasureOptions.map((option) => (
+                <label key={option} className="flex items-center gap-2 rounded-xl border p-3">
+                  <input
+                    type="checkbox"
+                    checked={adminAppealOptions.offenderMeasures.includes(option)}
+                    onChange={() => toggleAdminAppealOption('offenderMeasures', option)}
+                  />
+                  {option}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">5. 피해학생 보호조치</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              {victimMeasureOptions.map((option) => (
+                <label key={option} className="flex items-center gap-2 rounded-xl border p-3">
+                  <input
+                    type="checkbox"
+                    checked={adminAppealOptions.victimMeasures.includes(option)}
+                    onChange={() => toggleAdminAppealOption('victimMeasures', option)}
+                  />
+                  {option}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">6. 불복 방향</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              {(adminAppealOptions.position === 'perpetrator' ? perpetratorObjectionOptions : victimObjectionOptions).map((option) => (
+                <label key={option} className="flex items-center gap-2 rounded-xl border p-3">
+                  <input
+                    type="checkbox"
+                    checked={adminAppealOptions.objectionReasons.includes(option)}
+                    onChange={() => toggleAdminAppealOption('objectionReasons', option)}
+                  />
+                  {option}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          {[
+            ['7. 절차상 문제', 'procedureIssues', procedureIssueOptions],
+            ['8. 사실관계·증거 문제', 'evidenceIssues', evidenceIssueOptions],
+            ['9. 비례원칙 관련', 'proportionalityIssues', proportionalityIssueOptions],
+            ['10. 긴급성', 'urgency', urgencyOptions],
+          ].map(([title, key, options]) => (
+            <section key={String(key)} className="space-y-4">
+              <h2 className="text-lg font-black">{String(title)}</h2>
+              <div className="grid gap-3 md:grid-cols-2">
+                {(options as string[]).map((option) => (
+                  <label key={option} className="flex items-center gap-2 rounded-xl border p-3">
+                    <input
+                      type="checkbox"
+                      checked={adminAppealOptions[key as keyof AdminAppealOptions].includes(option)}
+                      onChange={() => toggleAdminAppealOption(key as 'procedureIssues' | 'evidenceIssues' | 'proportionalityIssues' | 'urgency', option)}
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : isMeasure ? (
         <div className="space-y-5">
           <section className="space-y-4">
             <h2 className="text-lg font-black">기본 사실관계</h2>
