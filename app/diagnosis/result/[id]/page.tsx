@@ -12,7 +12,13 @@ type DiagnosisResult = {
   resultSections?: {
     diagnosisType: string;
     adminAppealV2?: boolean;
+    principalResolutionV2?: boolean;
     inputSummary?: string;
+    possibility?: string;
+    legalRequirements?: string;
+    relationshipRecovery?: string;
+    riskFactors?: string;
+    additionalChecks?: string;
     factorAnalysis?: string;
     expectedMeasure?: string;
     reasons?: string;
@@ -71,7 +77,72 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
             </p>
           </section>
 
-          {diagnosis.resultSections?.adminAppealV2 ? (
+          {diagnosis.resultSections?.principalResolutionV2 ? (
+            <>
+              <section>
+                <h2 className="mb-2 font-bold">입력내용 요약</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.inputSummary}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">학교장 자체해결 가능성</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.possibility}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">법정요건 충족 여부</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.legalRequirements}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">관계회복 가능성</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.relationshipRecovery}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">심의 전 위험요소</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.riskFactors}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">추가 확인사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.additionalChecks}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">주의사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.caution}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">다음 대응방향</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.nextSteps}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">준비자료</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.preparationDocuments}
+                </p>
+              </section>
+            </>
+          ) : diagnosis.resultSections?.adminAppealV2 ? (
             <>
               <section>
                 <h2 className="mb-2 font-bold">현재 입장</h2>

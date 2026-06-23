@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 const items = [
   { title: '학교폭력 해당성 진단', href: '/diagnosis/D01' },
-  { title: '학교장 자체해결 가능성 진단', href: '/diagnosis/D02' },
+  { title: '학교장 자체해결 V2 진단', href: '/diagnosis/D02' },
   { title: '증거능력 진단', href: '/diagnosis/D03' },
   { title: '조치수위 예측', href: '/diagnosis/measure' },
   { title: '4호 이상 위험도 진단', href: '/diagnosis/D05' },

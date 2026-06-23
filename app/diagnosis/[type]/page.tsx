@@ -107,6 +107,45 @@ type AdminAppealResultSections = {
   preparationDocuments: string;
 };
 
+type PrincipalResolutionOptions = {
+  incidentContent: string;
+  incidentDateOrPeriod: string;
+  incidentPlace: string;
+  studentRelationship: string;
+  violenceTypes: string[];
+  diagnosisStatus: 'none' | 'issued' | 'planned' | 'unknown';
+  propertyDamageStatus: 'none' | 'restored' | 'promised' | 'unrestored' | 'unknown';
+  continuityStatus: 'once' | 'two-three' | 'repeated' | 'unknown';
+  retaliationStatus: 'none' | 'suspected' | 'confirmed' | 'unknown';
+  committeeIntent: 'not-wanted' | 'wanted' | 'unchecked' | 'unknown';
+  apology: boolean;
+  remorse: boolean;
+  reconciliation: boolean;
+  recoveryEffort: boolean;
+  guardianCommunication: boolean;
+  preventionPromise: boolean;
+  riskFactors: string[];
+  diagnosisSubmitted: boolean;
+  evidenceAvailable: boolean;
+  witnessStatement: boolean;
+  counselingRecord: boolean;
+  victimNeedsChecked: boolean;
+};
+
+type PrincipalResolutionResultSections = {
+  diagnosisType: string;
+  principalResolutionV2: true;
+  inputSummary: string;
+  possibility: string;
+  legalRequirements: string;
+  relationshipRecovery: string;
+  riskFactors: string;
+  additionalChecks: string;
+  caution: string;
+  nextSteps: string;
+  preparationDocuments: string;
+};
+
 const notice =
   '본 결과는 입력 내용을 기준으로 한 1차 검토자료이며, 실제 판단은 학교의 조사 및 심의 결과에 따라 달라질 수 있습니다.';
 
@@ -540,6 +579,194 @@ const getStatementSpecificityLabel = (
 const joinLines = (items: string[], fallback: string) =>
   items.length > 0 ? items.join('\n') : fallback;
 
+const violenceTypeOptions = [
+  '언어폭력',
+  '신체폭력',
+  '사이버폭력',
+  '따돌림',
+  '금품갈취',
+  '강요',
+  '성 관련 사안',
+  '기타',
+];
+
+const principalRiskOptions = [
+  '신체폭력 있음',
+  '정신적 피해 호소 큼',
+  '단체 채팅방, SNS 등 공개성 있음',
+  '다수 학생 관련',
+  '피해학생 등교 거부 또는 상담 요청',
+  '증거자료가 많음',
+  '피해학생 측이 강하게 문제제기함',
+];
+
+const principalPreparationDocuments = [
+  '사건 발생일시 및 장소 정리',
+  '관련 학생 관계 정리',
+  '피해 내용 및 피해회복 여부',
+  '진단서 제출 여부 확인',
+  '재산피해 복구 또는 복구 약속 자료',
+  '사과문, 반성문, 재발방지 약속',
+  '카카오톡, 문자, 사진, 녹음, CCTV 등 증거자료',
+  '피해학생 및 보호자 의사 확인 내용',
+  '담임교사 또는 상담교사 상담 기록',
+];
+
+const principalCautions = [
+  '학교장 자체해결은 피해학생 및 보호자가 심의위원회 개최를 원하지 않고, 법정요건을 모두 충족하는 경우에만 가능합니다.',
+  '사과, 반성, 화해가 있더라도 2주 이상 진단서, 지속성, 보복행위, 피해학생 측 심의 개최 의사 등이 있으면 자체해결이 어려울 수 있습니다.',
+  '전담기구 심의 전 진단서 제출 여부, 재산피해 복구 여부, 피해학생 측 의사를 반드시 확인해야 합니다.',
+  '본 결과는 입력내용 기준의 1차 검토자료이며, 실제 판단은 학교 전담기구 및 교육지원청 절차에 따라 달라질 수 있습니다.',
+];
+
+const getYesNoLabel = (value: boolean) => (value ? '있음' : '없음');
+
+const getPrincipalLabel = (value: string) => {
+  const labels: Record<string, string> = {
+    none: '없음',
+    issued: '있음',
+    planned: '발급 예정 또는 검토 중',
+    unknown: '모름',
+    restored: '있음, 즉시 복구 완료',
+    promised: '있음, 복구 약속 있음',
+    unrestored: '있음, 복구 안 됨',
+    once: '1회성',
+    'two-three': '2~3회',
+    repeated: '반복 또는 지속',
+    suspected: '보복행위 의심',
+    confirmed: '보복행위 있음',
+    'not-wanted': '원하지 않음',
+    wanted: '원함',
+    unchecked: '아직 확인 안 됨',
+  };
+
+  return labels[value] ?? value;
+};
+
+const calculatePrincipalResolutionResult = (
+  options: PrincipalResolutionOptions
+): PrincipalResolutionResultSections => {
+  const blockerReasons = [];
+  if (options.diagnosisStatus === 'issued') blockerReasons.push('2주 이상 진단서가 발급된 경우');
+  if (options.propertyDamageStatus === 'unrestored') blockerReasons.push('재산피해가 복구되지 않은 경우');
+  if (options.continuityStatus === 'repeated') blockerReasons.push('학교폭력이 반복 또는 지속된 경우');
+  if (options.retaliationStatus === 'confirmed') blockerReasons.push('보복행위가 확인된 경우');
+  if (options.committeeIntent === 'wanted') blockerReasons.push('피해학생 및 보호자가 심의위원회 개최를 원하는 경우');
+
+  const unknownReasons = [];
+  if (options.diagnosisStatus === 'planned' || options.diagnosisStatus === 'unknown') {
+    unknownReasons.push('2주 이상 진단서 발급 여부');
+  }
+  if (options.propertyDamageStatus === 'unknown') unknownReasons.push('재산상 피해 및 복구 여부');
+  if (options.continuityStatus === 'unknown') unknownReasons.push('지속성 여부');
+  if (options.retaliationStatus === 'suspected' || options.retaliationStatus === 'unknown') {
+    unknownReasons.push('보복행위 여부');
+  }
+  if (options.committeeIntent === 'unchecked' || options.committeeIntent === 'unknown') {
+    unknownReasons.push('피해학생 및 보호자의 심의위원회 개최 의사');
+  }
+
+  const legalRequirementsMet =
+    options.diagnosisStatus === 'none' &&
+    ['none', 'restored', 'promised'].includes(options.propertyDamageStatus) &&
+    options.continuityStatus !== 'repeated' &&
+    options.continuityStatus !== 'unknown' &&
+    options.retaliationStatus === 'none' &&
+    options.committeeIntent === 'not-wanted';
+
+  const recoveryItems = [
+    options.apology ? '사과' : '',
+    options.remorse ? '반성' : '',
+    options.reconciliation ? '화해 또는 합의 가능성' : '',
+    options.recoveryEffort ? '피해회복 노력' : '',
+    options.guardianCommunication ? '보호자 간 소통 가능성' : '',
+    options.preventionPromise ? '재발방지 약속 가능성' : '',
+  ].filter(Boolean);
+  const riskCount = options.riskFactors.length;
+
+  let classification = '추가 확인 필요';
+  if (blockerReasons.length > 0) {
+    classification = riskCount >= 2 ? '심의 가능성 높음' : '자체해결 어려움';
+  } else if (unknownReasons.length > 0) {
+    classification = '추가 확인 필요';
+  } else if (legalRequirementsMet && riskCount >= 4) {
+    classification = '심의 가능성 높음';
+  } else if (legalRequirementsMet && riskCount >= 2) {
+    classification = '추가 확인 필요';
+  } else if (legalRequirementsMet) {
+    classification = '가능성 높음';
+  }
+
+  const possibility =
+    classification === '가능성 높음'
+      ? '학교장 자체해결 가능성 높음'
+      : classification === '자체해결 어려움'
+        ? '학교장 자체해결 어려움'
+        : classification === '심의 가능성 높음'
+          ? '심의 가능성 높음'
+          : '추가 확인 필요';
+
+  const legalRequirements = [
+    `2주 이상 진단서: ${options.diagnosisStatus === 'none' ? '충족' : options.diagnosisStatus === 'issued' ? '미충족' : '확인 필요'} (${getPrincipalLabel(options.diagnosisStatus)})`,
+    `재산상 피해: ${['none', 'restored', 'promised'].includes(options.propertyDamageStatus) ? '충족' : options.propertyDamageStatus === 'unrestored' ? '미충족' : '확인 필요'} (${getPrincipalLabel(options.propertyDamageStatus)})`,
+    `지속성: ${options.continuityStatus === 'once' || options.continuityStatus === 'two-three' ? '충족 가능' : options.continuityStatus === 'repeated' ? '미충족' : '확인 필요'} (${getPrincipalLabel(options.continuityStatus)})`,
+    `보복행위: ${options.retaliationStatus === 'none' ? '충족' : options.retaliationStatus === 'confirmed' ? '미충족' : '확인 필요'} (${getPrincipalLabel(options.retaliationStatus)})`,
+    `피해학생 및 보호자 심의 개최 의사: ${options.committeeIntent === 'not-wanted' ? '충족' : options.committeeIntent === 'wanted' ? '미충족' : '확인 필요'} (${getPrincipalLabel(options.committeeIntent)})`,
+  ].join('\n');
+
+  const additionalChecks = [
+    ...unknownReasons,
+    !options.diagnosisSubmitted ? '진단서 제출 여부' : '',
+    !options.victimNeedsChecked ? '피해학생 측 요구사항 및 의사' : '',
+    options.propertyDamageStatus === 'restored' || options.propertyDamageStatus === 'promised'
+      ? '재산피해 복구 또는 복구 약속 자료'
+      : '',
+    !options.counselingRecord ? '담임 또는 상담교사 상담 기록' : '',
+  ].filter(Boolean);
+
+  const inputSummary = [
+    `사건 내용: ${options.incidentContent}`,
+    `발생일 또는 발생 기간: ${options.incidentDateOrPeriod || '미입력'}`,
+    `발생 장소: ${options.incidentPlace || '미입력'}`,
+    `관련 학생 관계: ${options.studentRelationship || '미입력'}`,
+    `폭력 유형: ${joinLines(options.violenceTypes, '선택 없음')}`,
+    `진단서 제출 여부: ${getYesNoLabel(options.diagnosisSubmitted)}`,
+    `증거자료 여부: ${getYesNoLabel(options.evidenceAvailable)}`,
+    `목격자 진술 여부: ${getYesNoLabel(options.witnessStatement)}`,
+    `상담 기록 여부: ${getYesNoLabel(options.counselingRecord)}`,
+    `피해학생 측 요구사항 확인 여부: ${getYesNoLabel(options.victimNeedsChecked)}`,
+  ].join('\n');
+
+  const nextSteps = [
+    blockerReasons.length > 0
+      ? `자체해결을 어렵게 하는 사유를 우선 정리하세요: ${blockerReasons.join(', ')}.`
+      : '법정요건 5개를 전담기구 심의 전 자료로 확인하세요.',
+    riskCount >= 2
+      ? '심의 위험 요소가 있으므로 사건 경위, 피해 정도, 공개성, 반복성, 증거자료를 시간순으로 정리하세요.'
+      : '피해학생 및 보호자의 의사를 명확히 확인하고, 관계회복 자료를 준비하세요.',
+    '상담예약을 통해 실제 절차 진행 전 자료 누락 여부를 점검하세요.',
+  ].join('\n');
+
+  return {
+    diagnosisType: '학교장 자체해결 V2',
+    principalResolutionV2: true,
+    inputSummary,
+    possibility: `${possibility}\n분류: ${classification}${
+      blockerReasons.length > 0 ? `\n주요 사유: ${blockerReasons.join(', ')}` : ''
+    }${riskCount > 0 ? `\n심의 위험 요소 ${riskCount}개가 확인되어 자체해결 가능성이 낮아질 수 있습니다.` : ''}`,
+    legalRequirements,
+    relationshipRecovery:
+      recoveryItems.length > 0
+        ? `${recoveryItems.join(', ')} 요소가 있어 관계회복 가능성은 검토할 수 있습니다.\n다만 관계회복 요소는 법정요건을 대체할 수 없습니다.`
+        : '관계회복 요소가 충분히 확인되지 않았습니다. 사과, 반성, 화해, 피해회복, 재발방지 약속 가능성을 추가로 확인하세요.\n다만 관계회복 요소는 법정요건을 대체할 수 없습니다.',
+    riskFactors: joinLines(options.riskFactors, '선택된 심의 위험 요소가 없습니다.'),
+    additionalChecks: joinLines(additionalChecks, '현재 입력 기준으로 즉시 추가 확인이 필요한 항목은 제한적입니다.'),
+    caution: principalCautions.join('\n'),
+    nextSteps,
+    preparationDocuments: principalPreparationDocuments.join('\n'),
+  };
+};
+
 const getPositionLabel = (position: AdminAppealOptions['position']) =>
   position === 'perpetrator' ? '가해학생 측' : '피해학생 측';
 
@@ -945,9 +1172,35 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     proportionalityIssues: [],
     urgency: [],
   });
+  const [principalResolutionOptions, setPrincipalResolutionOptions] =
+    useState<PrincipalResolutionOptions>({
+      incidentContent: '',
+      incidentDateOrPeriod: '',
+      incidentPlace: '',
+      studentRelationship: '',
+      violenceTypes: [],
+      diagnosisStatus: 'unknown',
+      propertyDamageStatus: 'unknown',
+      continuityStatus: 'unknown',
+      retaliationStatus: 'unknown',
+      committeeIntent: 'unchecked',
+      apology: false,
+      remorse: false,
+      reconciliation: false,
+      recoveryEffort: false,
+      guardianCommunication: false,
+      preventionPromise: false,
+      riskFactors: [],
+      diagnosisSubmitted: false,
+      evidenceAvailable: false,
+      witnessStatement: false,
+      counselingRecord: false,
+      victimNeedsChecked: false,
+    });
   const router = useRouter();
   const isMeasure = ['measure', 'action-level', 'D04'].includes(params.type);
   const isAdminAppeal = ['D08', 'admin-appeal', 'appeal'].includes(params.type);
+  const isPrincipalResolution = ['D02', 'school-resolution', 'principal-resolution'].includes(params.type);
 
   const updateMeasureOption = <K extends keyof MeasureOptions>(key: K, value: MeasureOptions[K]) => {
     setMeasureOptions((previous) => ({
@@ -976,13 +1229,38 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     }));
   };
 
+  const updatePrincipalResolutionOption = <K extends keyof PrincipalResolutionOptions>(
+    key: K,
+    value: PrincipalResolutionOptions[K]
+  ) => {
+    setPrincipalResolutionOptions((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
+  };
+
+  const togglePrincipalResolutionOption = (
+    key: 'violenceTypes' | 'riskFactors',
+    value: string
+  ) => {
+    setPrincipalResolutionOptions((previous) => ({
+      ...previous,
+      [key]: toggleSelection(previous[key], value),
+    }));
+  };
+
   const handleDiagnosis = () => {
     if (isMeasure && !measureOptions.incidentContent.trim()) {
       alert('사건 내용을 입력해 주세요.');
       return;
     }
 
-    if (!isMeasure && !isAdminAppeal && !content.trim()) {
+    if (isPrincipalResolution && !principalResolutionOptions.incidentContent.trim()) {
+      alert('사건 내용을 입력해 주세요.');
+      return;
+    }
+
+    if (!isMeasure && !isAdminAppeal && !isPrincipalResolution && !content.trim()) {
       alert('사건 내용을 입력해 주세요.');
       return;
     }
@@ -991,6 +1269,9 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     const storageKey = `${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`;
     const measureResult = isMeasure ? calculateMeasureResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
+    const principalResolutionResult = isPrincipalResolution
+      ? calculatePrincipalResolutionResult(principalResolutionOptions)
+      : null;
     const result = adminAppealResult
       ? [
           `행정심판 청구기간 검토: ${adminAppealResult.filingPeriodReview}`,
@@ -1009,6 +1290,16 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `주의사항: ${measureResult.caution}`,
           `다음 대응방향: ${measureResult.nextSteps}`,
         ].join('\n\n')
+      : principalResolutionResult
+      ? [
+          `학교장 자체해결 가능성: ${principalResolutionResult.possibility}`,
+          `법정요건 충족 여부:\n${principalResolutionResult.legalRequirements}`,
+          `관계회복 가능성:\n${principalResolutionResult.relationshipRecovery}`,
+          `심의 전 위험요소:\n${principalResolutionResult.riskFactors}`,
+          `추가 확인사항:\n${principalResolutionResult.additionalChecks}`,
+          `주의사항:\n${principalResolutionResult.caution}`,
+          `다음 대응방향:\n${principalResolutionResult.nextSteps}`,
+        ].join('\n\n')
       : buildResult(params.type, content);
     const savedContent = adminAppealResult
       ? [
@@ -1019,6 +1310,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         ].join('\n')
       : measureResult
         ? measureResult.inputSummary
+        : principalResolutionResult
+          ? principalResolutionResult.inputSummary
         : content;
 
     sessionStorage.setItem(
@@ -1028,10 +1321,12 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           ? adminAppealResult.diagnosisType
           : measureResult
             ? measureResult.diagnosisType
+            : principalResolutionResult
+              ? principalResolutionResult.diagnosisType
             : params.type,
         content: savedContent,
         result,
-        resultSections: adminAppealResult ?? measureResult,
+        resultSections: adminAppealResult ?? measureResult ?? principalResolutionResult,
       })
     );
 
@@ -1041,10 +1336,127 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
   return (
     <div className="card">
       <h1 className="mb-6 text-2xl font-black">
-        무료진단 입력 - {isMeasure ? '조치수위 예측 V2' : isAdminAppeal ? '행정심판 가능성 V2' : params.type}
+        무료진단 입력 - {isPrincipalResolution ? '학교장 자체해결 V2' : isMeasure ? '조치수위 예측 V2' : isAdminAppeal ? '행정심판 가능성 V2' : params.type}
       </h1>
 
-      {isAdminAppeal ? (
+      {isPrincipalResolution ? (
+        <div className="space-y-6">
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">1. 기본 사건 정보</h2>
+            <div>
+              <label className="mb-2 block font-bold">사건 내용</label>
+              <textarea
+                className="h-36 w-full rounded-xl border p-3"
+                placeholder="사건 경위, 피해 내용, 관련 학생 상황을 입력해 주세요."
+                value={principalResolutionOptions.incidentContent}
+                onChange={(event) => updatePrincipalResolutionOption('incidentContent', event.target.value)}
+              />
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-2 block font-bold">발생일 또는 발생 기간</label>
+                <input className="w-full rounded-xl border p-3" value={principalResolutionOptions.incidentDateOrPeriod} onChange={(event) => updatePrincipalResolutionOption('incidentDateOrPeriod', event.target.value)} />
+              </div>
+              <div>
+                <label className="mb-2 block font-bold">발생 장소</label>
+                <input className="w-full rounded-xl border p-3" value={principalResolutionOptions.incidentPlace} onChange={(event) => updatePrincipalResolutionOption('incidentPlace', event.target.value)} />
+              </div>
+              <div>
+                <label className="mb-2 block font-bold">관련 학생 관계</label>
+                <input className="w-full rounded-xl border p-3" value={principalResolutionOptions.studentRelationship} onChange={(event) => updatePrincipalResolutionOption('studentRelationship', event.target.value)} />
+              </div>
+            </div>
+            <fieldset className="rounded-xl border p-4">
+              <legend className="px-1 font-bold">폭력 유형</legend>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {violenceTypeOptions.map((option) => (
+                  <label key={option} className="flex items-center gap-2">
+                    <input type="checkbox" checked={principalResolutionOptions.violenceTypes.includes(option)} onChange={() => togglePrincipalResolutionOption('violenceTypes', option)} />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">2. 학교장 자체해결 법정요건</h2>
+            {[
+              ['2주 이상 진단서 발급 여부', 'diagnosisStatus', [['none', '없음'], ['issued', '있음'], ['planned', '발급 예정 또는 검토 중'], ['unknown', '모름']]],
+              ['재산상 피해 여부', 'propertyDamageStatus', [['none', '없음'], ['restored', '있음, 즉시 복구 완료'], ['promised', '있음, 복구 약속 있음'], ['unrestored', '있음, 복구 안 됨'], ['unknown', '모름']]],
+              ['지속성 여부', 'continuityStatus', [['once', '1회성'], ['two-three', '2~3회'], ['repeated', '반복 또는 지속'], ['unknown', '모름']]],
+              ['보복행위 여부', 'retaliationStatus', [['none', '아님'], ['suspected', '보복행위 의심'], ['confirmed', '보복행위 있음'], ['unknown', '모름']]],
+              ['피해학생 및 보호자의 심의위원회 개최 의사', 'committeeIntent', [['not-wanted', '원하지 않음'], ['wanted', '원함'], ['unchecked', '아직 확인 안 됨'], ['unknown', '모름']]],
+            ].map(([title, key, options]) => (
+              <fieldset key={String(key)} className="rounded-xl border p-4">
+                <legend className="px-1 font-bold">{String(title)}</legend>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {(options as string[][]).map(([value, label]) => (
+                    <label key={value} className="flex items-center gap-2 rounded-xl border px-3 py-2">
+                      <input
+                        type="radio"
+                        name={String(key)}
+                        checked={principalResolutionOptions[key as keyof PrincipalResolutionOptions] === value}
+                        onChange={() => updatePrincipalResolutionOption(key as keyof PrincipalResolutionOptions, value as never)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ))}
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">3. 관계회복 및 감경 요소</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              {[
+                ['apology', '사과 여부'],
+                ['remorse', '반성 여부'],
+                ['reconciliation', '화해 또는 합의 가능성'],
+                ['recoveryEffort', '피해회복 노력 여부'],
+                ['guardianCommunication', '보호자 간 소통 가능성'],
+                ['preventionPromise', '재발방지 약속 가능성'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 rounded-xl border p-3">
+                  <input type="checkbox" checked={Boolean(principalResolutionOptions[key as keyof PrincipalResolutionOptions])} onChange={(event) => updatePrincipalResolutionOption(key as keyof PrincipalResolutionOptions, event.target.checked as never)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">4. 심의 위험 요소</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              {principalRiskOptions.map((option) => (
+                <label key={option} className="flex items-center gap-2 rounded-xl border p-3">
+                  <input type="checkbox" checked={principalResolutionOptions.riskFactors.includes(option)} onChange={() => togglePrincipalResolutionOption('riskFactors', option)} />
+                  {option}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-black">5. 증거 및 준비상태</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              {[
+                ['diagnosisSubmitted', '진단서 제출 여부'],
+                ['evidenceAvailable', '카카오톡, 문자, 사진, 녹음, CCTV 등 증거자료 여부'],
+                ['witnessStatement', '목격자 진술 여부'],
+                ['counselingRecord', '담임 또는 상담교사 상담 기록 여부'],
+                ['victimNeedsChecked', '피해학생 측 요구사항 확인 여부'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 rounded-xl border p-3">
+                  <input type="checkbox" checked={Boolean(principalResolutionOptions[key as keyof PrincipalResolutionOptions])} onChange={(event) => updatePrincipalResolutionOption(key as keyof PrincipalResolutionOptions, event.target.checked as never)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : isAdminAppeal ? (
         <div className="space-y-5">
           <section className="space-y-4">
             <h2 className="text-lg font-black">1. 현재 입장</h2>
