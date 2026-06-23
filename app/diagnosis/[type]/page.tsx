@@ -36,8 +36,32 @@ type DiagnosisMessage = {
   checklist: string;
 };
 
+type MeasureOptions = {
+  incidentContent: string;
+  damageLevel: 'minor' | 'middle' | 'severe';
+  continued: boolean;
+  intentional: boolean;
+  remorse: boolean;
+  apology: boolean;
+  reconciliation: boolean;
+  previousSimilarCase: boolean;
+  hasEvidence: boolean;
+};
+
+type MeasureResultSections = {
+  diagnosisType: string;
+  inputSummary: string;
+  expectedMeasure: string;
+  reasons: string;
+  caution: string;
+  nextSteps: string;
+};
+
 const notice =
   '본 결과는 입력 내용을 기준으로 한 1차 검토자료이며, 실제 판단은 학교의 조사 및 심의 결과에 따라 달라질 수 있습니다.';
+
+const d04Notice =
+  '본 결과는 입력값을 기준으로 한 참고용 예측이며, 실제 조치는 학교폭력대책심의위원회의 판단에 따라 달라질 수 있습니다.';
 
 const includesAny = (content: string, keywords: string[]) =>
   keywords.some((keyword) => content.includes(keyword));
@@ -336,6 +360,92 @@ const getD02Message = (analysis: ContentAnalysis): DiagnosisMessage => {
   };
 };
 
+const getDamageLevelLabel = (damageLevel: MeasureOptions['damageLevel']) => {
+  if (damageLevel === 'minor') return '경미';
+  if (damageLevel === 'middle') return '중간';
+  return '큼';
+};
+
+const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections => {
+  const aggravatingReasons = [];
+  const mitigatingReasons = [];
+  const cautions = [d04Notice];
+  let score = 0;
+
+  if (options.damageLevel === 'minor') score += 1;
+  if (options.damageLevel === 'middle') score += 2;
+  if (options.damageLevel === 'severe') {
+    score += 4;
+    aggravatingReasons.push('피해 정도가 큰 사안으로 평가될 수 있습니다.');
+  }
+  if (options.continued) {
+    score += 2;
+    aggravatingReasons.push('지속성 또는 반복성이 있어 조치수위가 높아질 수 있습니다.');
+  }
+  if (options.intentional) {
+    score += 2;
+    aggravatingReasons.push('고의성이 인정되면 가중 요소로 작용할 수 있습니다.');
+  }
+  if (options.previousSimilarCase) {
+    score += 2;
+    aggravatingReasons.push('이전 유사 사안이 있으면 재발 또는 상습성 판단에 영향을 줄 수 있습니다.');
+  }
+  if (options.remorse) {
+    score -= 1;
+    mitigatingReasons.push('반성 정황은 감경 요소로 고려될 수 있습니다.');
+  }
+  if (options.apology) {
+    score -= 1;
+    mitigatingReasons.push('사과 여부는 피해 회복 노력으로 볼 수 있습니다.');
+  }
+  if (options.reconciliation) {
+    score -= 1;
+    mitigatingReasons.push('화해 또는 합의 정황은 감경 요소로 고려될 수 있습니다.');
+  }
+  if (!options.hasEvidence) {
+    cautions.push('증거자료가 부족하면 사실관계 다툼 가능성이 있으므로 객관자료 확보가 필요합니다.');
+  }
+
+  const normalizedScore = Math.max(0, score);
+  let expectedMeasure = '낮음: 1~3호 조치 가능성';
+
+  if (normalizedScore >= 7) {
+    expectedMeasure = '높음: 6~9호 조치 가능성';
+  } else if (normalizedScore >= 4) {
+    expectedMeasure = '보통 이상: 4~5호 조치 가능성';
+  } else if (normalizedScore >= 3) {
+    expectedMeasure = '보통: 2~4호 조치 가능성';
+  }
+
+  const inputSummary = [
+    `사건 내용: ${options.incidentContent}`,
+    `피해 정도: ${getDamageLevelLabel(options.damageLevel)}`,
+    `지속성 여부: ${options.continued ? '예' : '아니오'}`,
+    `고의성 여부: ${options.intentional ? '예' : '아니오'}`,
+    `반성 여부: ${options.remorse ? '예' : '아니오'}`,
+    `사과 여부: ${options.apology ? '예' : '아니오'}`,
+    `화해 또는 합의 여부: ${options.reconciliation ? '예' : '아니오'}`,
+    `이전 유사 사안 여부: ${options.previousSimilarCase ? '예' : '아니오'}`,
+    `증거자료 보유 여부: ${options.hasEvidence ? '예' : '아니오'}`,
+  ].join('\n');
+
+  const reasons = [
+    ...aggravatingReasons,
+    ...mitigatingReasons,
+    `임시 점수는 ${normalizedScore}점으로 산정했습니다.`,
+  ];
+
+  return {
+    diagnosisType: '조치수위 예측',
+    inputSummary,
+    expectedMeasure,
+    reasons: reasons.join('\n'),
+    caution: cautions.join('\n'),
+    nextSteps:
+      '사건 일시, 장소, 관련 학생, 피해 상태, 증거자료 목록을 시간순으로 정리하고 상담예약을 통해 실제 심의 가능성과 대응자료를 점검해 주세요.',
+  };
+};
+
 const buildTypeMessage = (type: string, analysis: ContentAnalysis): DiagnosisMessage => {
   if (type === 'D02') return getD02Message(analysis);
 
@@ -351,11 +461,6 @@ const buildTypeMessage = (type: string, analysis: ContentAnalysis): DiagnosisMes
     },
     D03: {
       judgment: `증거자료 확보 필요도: ${analysis.hasEvidence ? '보통' : '높음'}`,
-      reason,
-      checklist,
-    },
-    D04: {
-      judgment: `조치 필요성: ${level}`,
       reason,
       checklist,
     },
@@ -410,24 +515,58 @@ const buildResult = (type: string, content: string) => {
 
 export default function DiagnosisInputPage({ params }: { params: { type: string } }) {
   const [content, setContent] = useState('');
+  const [measureOptions, setMeasureOptions] = useState<MeasureOptions>({
+    incidentContent: '',
+    damageLevel: 'minor',
+    continued: false,
+    intentional: false,
+    remorse: false,
+    apology: false,
+    reconciliation: false,
+    previousSimilarCase: false,
+    hasEvidence: false,
+  });
   const router = useRouter();
+  const isMeasure = ['measure', 'action-level', 'D04'].includes(params.type);
+
+  const updateMeasureOption = <K extends keyof MeasureOptions>(key: K, value: MeasureOptions[K]) => {
+    setMeasureOptions((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
+  };
 
   const handleDiagnosis = () => {
-    if (!content.trim()) {
+    if (isMeasure && !measureOptions.incidentContent.trim()) {
+      alert('사건 내용을 입력해 주세요.');
+      return;
+    }
+
+    if (!isMeasure && !content.trim()) {
       alert('사건 내용을 입력해 주세요.');
       return;
     }
 
     const resultId = Date.now().toString();
     const storageKey = `${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`;
-    const result = buildResult(params.type, content);
+    const measureResult = isMeasure ? calculateMeasureResult(measureOptions) : null;
+    const result = measureResult
+      ? [
+          `예상 조치수위: ${measureResult.expectedMeasure}`,
+          `판단 이유: ${measureResult.reasons}`,
+          `주의사항: ${measureResult.caution}`,
+          `다음 대응방향: ${measureResult.nextSteps}`,
+        ].join('\n\n')
+      : buildResult(params.type, content);
+    const savedContent = measureResult ? measureResult.inputSummary : content;
 
     sessionStorage.setItem(
       storageKey,
       JSON.stringify({
-        type: params.type,
-        content,
+        type: measureResult ? measureResult.diagnosisType : params.type,
+        content: savedContent,
         result,
+        resultSections: measureResult,
       })
     );
 
@@ -436,14 +575,122 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
 
   return (
     <div className="card">
-      <h1 className="mb-6 text-2xl font-black">무료진단 입력 - {params.type}</h1>
+      <h1 className="mb-6 text-2xl font-black">
+        무료진단 입력 - {isMeasure ? '조치수위 예측' : params.type}
+      </h1>
 
-      <textarea
-        className="h-60 w-full rounded-xl border p-3"
-        placeholder="사건 발생일, 장소, 관련 학생, 구체적인 내용, 증거자료를 입력해 주세요."
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-      />
+      {isMeasure ? (
+        <div className="space-y-5">
+          <div>
+            <label className="mb-2 block font-bold">사건 내용</label>
+            <textarea
+              className="h-40 w-full rounded-xl border p-3"
+              placeholder="사건 발생일, 장소, 관련 학생, 구체적인 경위와 피해 내용을 입력해 주세요."
+              value={measureOptions.incidentContent}
+              onChange={(event) => updateMeasureOption('incidentContent', event.target.value)}
+            />
+          </div>
+
+          <fieldset className="rounded-xl border p-4">
+            <legend className="px-1 font-bold">피해 정도</legend>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="damageLevel"
+                  checked={measureOptions.damageLevel === 'minor'}
+                  onChange={() => updateMeasureOption('damageLevel', 'minor')}
+                />
+                경미
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="damageLevel"
+                  checked={measureOptions.damageLevel === 'middle'}
+                  onChange={() => updateMeasureOption('damageLevel', 'middle')}
+                />
+                중간
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="damageLevel"
+                  checked={measureOptions.damageLevel === 'severe'}
+                  onChange={() => updateMeasureOption('damageLevel', 'severe')}
+                />
+                큼
+              </label>
+            </div>
+          </fieldset>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex items-center gap-2 rounded-xl border p-3">
+              <input
+                type="checkbox"
+                checked={measureOptions.continued}
+                onChange={(event) => updateMeasureOption('continued', event.target.checked)}
+              />
+              지속성 여부
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border p-3">
+              <input
+                type="checkbox"
+                checked={measureOptions.intentional}
+                onChange={(event) => updateMeasureOption('intentional', event.target.checked)}
+              />
+              고의성 여부
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border p-3">
+              <input
+                type="checkbox"
+                checked={measureOptions.remorse}
+                onChange={(event) => updateMeasureOption('remorse', event.target.checked)}
+              />
+              반성 여부
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border p-3">
+              <input
+                type="checkbox"
+                checked={measureOptions.apology}
+                onChange={(event) => updateMeasureOption('apology', event.target.checked)}
+              />
+              사과 여부
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border p-3">
+              <input
+                type="checkbox"
+                checked={measureOptions.reconciliation}
+                onChange={(event) => updateMeasureOption('reconciliation', event.target.checked)}
+              />
+              화해 또는 합의 여부
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border p-3">
+              <input
+                type="checkbox"
+                checked={measureOptions.previousSimilarCase}
+                onChange={(event) => updateMeasureOption('previousSimilarCase', event.target.checked)}
+              />
+              이전 유사 사안 여부
+            </label>
+            <label className="flex items-center gap-2 rounded-xl border p-3">
+              <input
+                type="checkbox"
+                checked={measureOptions.hasEvidence}
+                onChange={(event) => updateMeasureOption('hasEvidence', event.target.checked)}
+              />
+              증거자료 보유 여부
+            </label>
+          </div>
+        </div>
+      ) : (
+        <textarea
+          className="h-60 w-full rounded-xl border p-3"
+          placeholder="사건 발생일, 장소, 관련 학생, 구체적인 내용, 증거자료를 입력해 주세요."
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
+      )}
 
       <button onClick={handleDiagnosis} className="btn-primary mt-5">
         AI 진단하기
