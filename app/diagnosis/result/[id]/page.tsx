@@ -14,8 +14,10 @@ type DiagnosisResult = {
     adminAppealV2?: boolean;
     principalResolutionV2?: boolean;
     schoolViolenceEligibilityV2?: boolean;
+    d05RiskV2?: boolean;
     inputContent?: string;
     diagnosisResult?: string;
+    riskLevel?: string;
     grounds?: string;
     additionalChecks?: string;
     evidenceMaterials?: string;
@@ -24,6 +26,8 @@ type DiagnosisResult = {
     legalRequirements?: string;
     relationshipRecovery?: string;
     riskFactors?: string;
+    schoolRecordPossibility?: string;
+    admissionImpactPossibility?: string;
     factorAnalysis?: string;
     expectedMeasure?: string;
     reasons?: string;
@@ -82,7 +86,79 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
             </p>
           </section>
 
-          {diagnosis.resultSections?.schoolViolenceEligibilityV2 ? (
+          {diagnosis.resultSections?.d05RiskV2 ? (
+            <>
+              <section>
+                <h2 className="mb-2 font-bold">입력내용 요약</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.inputSummary ?? diagnosis.content}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">진단결과</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.diagnosisResult}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">4호 이상 위험도</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.riskLevel}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">위험요소</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.riskFactors}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">감경요소</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.mitigatingFactors}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">생활기록부 기재 가능성</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.schoolRecordPossibility}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">대학입시 영향 가능성</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.admissionImpactPossibility}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">추가 확인사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.additionalChecks}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">다음 대응방향</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.nextSteps}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">주의사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.caution}
+                </p>
+              </section>
+            </>
+          ) : diagnosis.resultSections?.schoolViolenceEligibilityV2 ? (
             <>
               <section>
                 <h2 className="mb-2 font-bold">입력내용</h2>

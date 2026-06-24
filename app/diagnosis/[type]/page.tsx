@@ -83,6 +83,27 @@ type MeasureResultSections = {
   nextSteps: string;
 };
 
+type D05RiskGrade =
+  | '4호 이상 가능성 매우 높음'
+  | '4호 이상 가능성 높음'
+  | '4호 이상 가능성 보통'
+  | '4호 이상 가능성 낮음';
+
+type D05RiskResultSections = {
+  diagnosisType: string;
+  d05RiskV2: true;
+  inputSummary: string;
+  diagnosisResult: string;
+  riskLevel: D05RiskGrade;
+  riskFactors: string;
+  mitigatingFactors: string;
+  schoolRecordPossibility: string;
+  admissionImpactPossibility: string;
+  additionalChecks: string;
+  nextSteps: string;
+  caution: string;
+};
+
 type AdminAppealOptions = {
   position: 'perpetrator' | 'victim';
   reviewStatus: 'before-review' | 'completed-before-notice' | 'notice-received';
@@ -1210,6 +1231,194 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
   };
 };
 
+const hasD05Keyword = (content: string, keywords: string[]) => {
+  const normalized = content.replace(/\s/g, '').toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword.replace(/\s/g, '').toLowerCase()));
+};
+
+const calculateD05RiskResult = (options: MeasureOptions): D05RiskResultSections => {
+  const content = options.incidentContent;
+  const hasThreat = hasD05Keyword(content, ['협박', '위협', '겁을 줌', '죽이겠다', '가만두지 않겠다']);
+  const hasPhotoVideoSpread = hasD05Keyword(content, [
+    '사진 유포',
+    '영상 유포',
+    '동영상 유포',
+    '불법촬영',
+    '촬영물',
+    '캡처 유포',
+    '단톡방 공유',
+    'sns 게시',
+  ]);
+  const hasDiagnosisOrTreatment = hasD05Keyword(content, ['진단서', '소견서', '병원', '치료', '상담센터', '의무기록']);
+  const hasCounselingRecord = hasD05Keyword(content, ['상담자료', '상담기록', '상담확인서', '위클래스', '전문상담']);
+  const hasMinorDamage = options.damageLevel === 'minor';
+  const hasOneTime = options.frequency === 'once' && !options.continued && options.duration === 'one-day';
+
+  const riskFactors = [
+    { label: '신체폭력', matched: options.physicalViolence, score: 4 },
+    { label: '반복 발생', matched: options.frequency === 'repeated', score: 4 },
+    { label: '지속성 있음', matched: options.continued || options.duration === 'within-month' || options.duration === 'over-month', score: 3 },
+    { label: '고의성 있음', matched: options.intentional, score: 3 },
+    { label: '협박', matched: hasThreat, score: 3 },
+    { label: '강요', matched: options.coercion, score: 3 },
+    { label: '금품갈취', matched: options.extortion, score: 3 },
+    { label: '성 관련 사안', matched: options.sexualIssue, score: 6 },
+    { label: '사이버폭력', matched: options.cyberViolence, score: 3 },
+    { label: '사진·영상 유포', matched: hasPhotoVideoSpread, score: 5 },
+    { label: '집단행위', matched: options.groupAction, score: 4 },
+    { label: '보복행위', matched: options.retaliation, score: 5 },
+    { label: '위험한 물건 사용', matched: options.weaponUse, score: 6 },
+    { label: '피해학생이 장애학생인 경우', matched: options.victimDisabled, score: 4 },
+    { label: '병원 진단서 또는 치료자료 있음', matched: hasDiagnosisOrTreatment, score: 3 },
+    { label: '피해학생 상담자료 있음', matched: hasCounselingRecord, score: 2 },
+    { label: '목격자 또는 객관자료 있음', matched: options.objectiveEvidence || options.hasEvidence, score: 2 },
+    { label: '이전 유사 사안 있음', matched: options.previousSimilarCase, score: 3 },
+    { label: '반성 없음', matched: !options.remorse, score: 2 },
+    { label: '사과 없음', matched: !options.apology, score: 2 },
+    { label: '화해 또는 합의 없음', matched: !options.reconciliation, score: 2 },
+    { label: '보호자 재발방지 노력 없음', matched: !options.guardianEffort, score: 2 },
+  ];
+
+  const mitigatingFactors = [
+    { label: '1회성', matched: hasOneTime, score: 3 },
+    { label: '피해 경미', matched: hasMinorDamage, score: 3 },
+    { label: '단순 말다툼', matched: options.simpleConflict, score: 3 },
+    { label: '오해 또는 장난', matched: options.unclearSchoolViolence || hasD05Keyword(content, ['오해', '장난']), score: 2 },
+    { label: '즉시 사과', matched: options.apology && hasD05Keyword(content, ['즉시 사과', '바로 사과', '당일 사과']), score: 2 },
+    { label: '화해 또는 합의', matched: options.reconciliation, score: 3 },
+    { label: '보호자 사과', matched: options.guardianEffort && hasD05Keyword(content, ['보호자 사과', '부모 사과', '학부모 사과']), score: 2 },
+    { label: '재발방지 약속', matched: options.guardianEffort, score: 2 },
+    { label: '초범', matched: options.firstOffense, score: 2 },
+    { label: '객관자료 부족', matched: !options.objectiveEvidence && !options.hasEvidence, score: 2 },
+    { label: '사실관계 다툼 있음', matched: options.factualDispute, score: 2 },
+    { label: '학교폭력 해당성 불명확', matched: options.unclearSchoolViolence, score: 3 },
+    { label: '쌍방 갈등 성격', matched: options.mutualConflict, score: 2 },
+  ];
+
+  const riskScore = riskFactors
+    .filter((factor) => factor.matched)
+    .reduce((sum, factor) => sum + factor.score, 0);
+  const mitigationScore = mitigatingFactors
+    .filter((factor) => factor.matched)
+    .reduce((sum, factor) => sum + factor.score, 0);
+  const totalScore = Math.max(0, riskScore - mitigationScore);
+  const coreRiskCount = [
+    options.physicalViolence,
+    options.frequency === 'repeated',
+    options.continued,
+    options.intentional,
+    hasThreat || options.coercion,
+    options.groupAction,
+    options.retaliation,
+    options.sexualIssue,
+    options.weaponUse,
+    hasPhotoVideoSpread,
+    hasDiagnosisOrTreatment || options.objectiveEvidence,
+  ].filter(Boolean).length;
+
+  let riskLevel: D05RiskGrade = '4호 이상 가능성 낮음';
+  if (totalScore >= 20 || coreRiskCount >= 6 || options.sexualIssue || options.weaponUse) {
+    riskLevel = '4호 이상 가능성 매우 높음';
+  } else if (totalScore >= 12 || coreRiskCount >= 3 || options.retaliation || options.groupAction) {
+    riskLevel = '4호 이상 가능성 높음';
+  } else if (totalScore >= 5 || riskScore > 0) {
+    riskLevel = '4호 이상 가능성 보통';
+  }
+
+  if (
+    riskLevel !== '4호 이상 가능성 매우 높음' &&
+    hasOneTime &&
+    hasMinorDamage &&
+    (options.apology || options.reconciliation) &&
+    !options.previousSimilarCase &&
+    !options.sexualIssue &&
+    !options.weaponUse &&
+    !options.retaliation
+  ) {
+    riskLevel = riskScore >= 6 ? '4호 이상 가능성 보통' : '4호 이상 가능성 낮음';
+  }
+
+  const matchedRiskFactors = riskFactors.filter((factor) => factor.matched).map((factor) => factor.label);
+  const matchedMitigatingFactors = mitigatingFactors.filter((factor) => factor.matched).map((factor) => factor.label);
+
+  const guidanceByLevel: Record<D05RiskGrade, string[]> = {
+    '4호 이상 가능성 매우 높음': [
+      '신체폭력, 반복성, 고의성, 협박·강요, 집단성, 보복성, 피해자료 등이 복합적으로 확인되는 경우입니다.',
+      '4호 이상 조치 가능성이 높고, 생활기록부 기재 및 진학 영향 검토가 필요합니다.',
+      '사실관계와 증거자료를 시간순으로 정리해야 합니다.',
+    ],
+    '4호 이상 가능성 높음': [
+      '피해 정도, 지속성, 고의성, 증거자료 중 일부 위험요소가 확인되는 경우입니다.',
+      '4호 이상 가능성을 배제하기 어렵습니다.',
+      '반성문, 사과, 화해 노력, 보호자 재발방지 자료를 준비할 필요가 있습니다.',
+    ],
+    '4호 이상 가능성 보통': [
+      '일부 위험요소는 있으나 피해가 경미하거나 감경요소도 함께 있는 경우입니다.',
+      '1~3호 또는 4호 이상 사이에서 다툼이 있을 수 있습니다.',
+      '증거자료, 진술 일관성, 반성·화해 여부가 중요합니다.',
+    ],
+    '4호 이상 가능성 낮음': [
+      '단순 갈등, 일회성, 피해 경미, 사과·화해, 초범, 객관자료 부족 등이 확인되는 경우입니다.',
+      '4호 이상 가능성은 낮아 보이나, 추가 피해나 반복성이 확인되면 달라질 수 있습니다.',
+      '학교폭력 해당성 자체와 조치 필요성부터 검토할 필요가 있습니다.',
+    ],
+  };
+
+  const schoolRecordPossibility =
+    riskLevel === '4호 이상 가능성 매우 높음' || riskLevel === '4호 이상 가능성 높음'
+      ? '생활기록부 기재 가능성 있음'
+      : riskLevel === '4호 이상 가능성 보통'
+        ? '사안에 따라 생활기록부 기재 가능성 검토 필요'
+        : '생활기록부 기재 가능성 낮음';
+  const admissionImpactPossibility =
+    riskLevel === '4호 이상 가능성 매우 높음' || riskLevel === '4호 이상 가능성 높음'
+      ? '대학입시 영향 가능성 있음'
+      : riskLevel === '4호 이상 가능성 보통'
+        ? '전형과 대학 기준에 따라 영향 가능성 검토 필요'
+        : '현재 입력내용만으로는 대학입시 영향 가능성 낮음';
+
+  const inputSummary = [
+    `진단유형: 4호 이상 위험도 진단`,
+    `현재 입장: ${options.position === 'perpetrator' ? '가해학생 측' : '피해학생 측'}`,
+    `사건 내용: ${content}`,
+    `피해 정도: ${getDamageLevelLabel(options.damageLevel)}`,
+    `발생 횟수: ${getFrequencyLabel(options.frequency)}`,
+    `발생 기간: ${getDurationLabel(options.duration)}`,
+    `증거자료 보유 여부: ${options.hasEvidence || options.objectiveEvidence ? '있음' : '부족하거나 미입력'}`,
+    `사실관계 다툼 여부: ${options.factualDispute ? '있음' : '명확히 입력되지 않음'}`,
+  ].join('\n');
+
+  return {
+    diagnosisType: '4호 이상 위험도 진단',
+    d05RiskV2: true,
+    inputSummary,
+    diagnosisResult: guidanceByLevel[riskLevel].join('\n'),
+    riskLevel,
+    riskFactors: matchedRiskFactors.length > 0 ? matchedRiskFactors.join('\n') : '현재 입력내용에서 뚜렷한 위험요소가 충분히 확인되지 않았습니다.',
+    mitigatingFactors:
+      matchedMitigatingFactors.length > 0 ? matchedMitigatingFactors.join('\n') : '현재 입력내용에서 뚜렷한 감경요소가 충분히 확인되지 않았습니다.',
+    schoolRecordPossibility,
+    admissionImpactPossibility,
+    additionalChecks: [
+      '피해 발생 일시, 장소, 관련 학생, 목격자를 시간순으로 확인해 주세요.',
+      '진단서, 치료자료, 상담자료, 사진·영상, 문자·SNS, CCTV 등 객관자료가 있는지 확인해 주세요.',
+      '반복성, 고의성, 협박·강요, 보복성, 집단성 여부를 구체적인 표현과 행동으로 정리해 주세요.',
+      '사과, 반성, 화해 또는 합의, 보호자 재발방지 노력 자료가 있는지 확인해 주세요.',
+    ].join('\n'),
+    nextSteps: [
+      riskLevel === '4호 이상 가능성 매우 높음' || riskLevel === '4호 이상 가능성 높음'
+        ? '증거자료와 진술을 먼저 정리하고, 생활기록부 및 진학 영향까지 함께 검토해 주세요.'
+        : riskLevel === '4호 이상 가능성 보통'
+          ? '위험요소와 감경요소를 나누어 정리하고, 1~3호와 4호 이상 판단에서 다툴 지점을 확인해 주세요.'
+          : '학교폭력 해당성, 조치 필요성, 추가 피해 또는 반복성 여부부터 차분히 확인해 주세요.',
+      '입력하지 못한 자료가 있으면 결과가 달라질 수 있으므로, 사안조사 자료와 객관자료를 보완해 주세요.',
+      '필요하면 상담예약을 통해 실제 대응방향을 점검해 주세요.',
+    ].join('\n'),
+    caution:
+      '이 결과는 입력내용을 기준으로 한 1차 위험도 진단입니다. 법률상 확정판단이 아니며, 실제 조치와 생활기록부·입시 영향은 조사 결과, 증거자료, 심의 판단, 학교와 교육청 기준에 따라 달라질 수 있어 추가 확인이 필요합니다.',
+  };
+};
+
 const buildTypeMessage = (type: string, analysis: ContentAnalysis): DiagnosisMessage => {
   if (type === 'D02') return getD02Message(analysis);
 
@@ -1536,7 +1745,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
       victimNeedsChecked: false,
     });
   const router = useRouter();
-  const isMeasure = ['measure', 'action-level', 'D04'].includes(params.type);
+  const isD05Risk = params.type === 'D05';
+  const isMeasure = ['measure', 'action-level', 'D04', 'D05'].includes(params.type);
   const isAdminAppeal = ['D08', 'admin-appeal', 'appeal'].includes(params.type);
   const isPrincipalResolution = ['D02', 'school-resolution', 'principal-resolution'].includes(params.type);
 
@@ -1607,7 +1817,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     const storageKey = `${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`;
     const schoolViolenceEligibilityResult =
       params.type === 'D01' ? calculateSchoolViolenceEligibilityResult(content) : null;
-    const measureResult = isMeasure ? calculateMeasureResult(measureOptions) : null;
+    const d05RiskResult = isD05Risk ? calculateD05RiskResult(measureOptions) : null;
+    const measureResult = isMeasure && !isD05Risk ? calculateMeasureResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
     const principalResolutionResult = isPrincipalResolution
       ? calculatePrincipalResolutionResult(principalResolutionOptions)
@@ -1628,6 +1839,18 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `주요 불복 사유: ${adminAppealResult.objectionReasons}`,
           `주의사항: ${adminAppealResult.caution}`,
           `다음 대응방향: ${adminAppealResult.nextSteps}`,
+        ].join('\n\n')
+      : d05RiskResult
+      ? [
+          `진단결과:\n${d05RiskResult.diagnosisResult}`,
+          `4호 이상 위험도: ${d05RiskResult.riskLevel}`,
+          `위험요소:\n${d05RiskResult.riskFactors}`,
+          `감경요소:\n${d05RiskResult.mitigatingFactors}`,
+          `생활기록부 기재 가능성: ${d05RiskResult.schoolRecordPossibility}`,
+          `대학입시 영향 가능성: ${d05RiskResult.admissionImpactPossibility}`,
+          `추가 확인사항:\n${d05RiskResult.additionalChecks}`,
+          `다음 대응방향:\n${d05RiskResult.nextSteps}`,
+          `주의사항:\n${d05RiskResult.caution}`,
         ].join('\n\n')
       : measureResult
       ? [
@@ -1661,6 +1884,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         ].join('\n')
       : measureResult
         ? measureResult.inputSummary
+        : d05RiskResult
+          ? d05RiskResult.inputSummary
         : principalResolutionResult
           ? principalResolutionResult.inputSummary
         : content;
@@ -1672,6 +1897,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           ? adminAppealResult.diagnosisType
           : schoolViolenceEligibilityResult
             ? schoolViolenceEligibilityResult.diagnosisType
+            : d05RiskResult
+              ? d05RiskResult.diagnosisType
             : measureResult
               ? measureResult.diagnosisType
               : principalResolutionResult
@@ -1680,7 +1907,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         content: savedContent,
         result,
         resultSections:
-          schoolViolenceEligibilityResult ?? adminAppealResult ?? measureResult ?? principalResolutionResult,
+          schoolViolenceEligibilityResult ?? adminAppealResult ?? d05RiskResult ?? measureResult ?? principalResolutionResult,
       })
     );
 
@@ -1690,7 +1917,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
   return (
     <div className="card">
       <h1 className="mb-6 text-2xl font-black">
-        무료진단 입력 - {isPrincipalResolution ? '학교장 자체해결 V2' : isMeasure ? '조치수위 예측 V2' : isAdminAppeal ? '행정심판 가능성 V2' : params.type}
+        무료진단 입력 - {isPrincipalResolution ? '학교장 자체해결 V2' : isD05Risk ? '4호 이상 위험도 진단' : isMeasure ? '조치수위 예측 V2' : isAdminAppeal ? '행정심판 가능성 V2' : params.type}
       </h1>
 
       {isPrincipalResolution ? (
