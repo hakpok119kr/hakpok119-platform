@@ -13,12 +13,17 @@ type DiagnosisResult = {
     diagnosisType: string;
     adminAppealV2?: boolean;
     principalResolutionV2?: boolean;
+    schoolViolenceEligibilityV2?: boolean;
+    inputContent?: string;
+    diagnosisResult?: string;
+    grounds?: string;
+    additionalChecks?: string;
+    evidenceMaterials?: string;
     inputSummary?: string;
     possibility?: string;
     legalRequirements?: string;
     relationshipRecovery?: string;
     riskFactors?: string;
-    additionalChecks?: string;
     factorAnalysis?: string;
     expectedMeasure?: string;
     reasons?: string;
@@ -77,7 +82,58 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
             </p>
           </section>
 
-          {diagnosis.resultSections?.principalResolutionV2 ? (
+          {diagnosis.resultSections?.schoolViolenceEligibilityV2 ? (
+            <>
+              <section>
+                <h2 className="mb-2 font-bold">입력내용</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.inputContent ?? diagnosis.content}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">진단결과</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.diagnosisResult}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">판단근거</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.grounds}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">추가로 확인할 사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.additionalChecks}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">준비할 증거자료</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.evidenceMaterials}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">다음 대응방향</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.nextSteps}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">주의사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.caution}
+                </p>
+              </section>
+            </>
+          ) : diagnosis.resultSections?.principalResolutionV2 ? (
             <>
               <section>
                 <h2 className="mb-2 font-bold">입력내용 요약</h2>

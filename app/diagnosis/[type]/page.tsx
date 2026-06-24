@@ -113,6 +113,24 @@ type AdminAppealResultSections = {
   preparationDocuments: string;
 };
 
+type SchoolViolenceEligibilityGrade =
+  | '학교폭력 해당 가능성 높음'
+  | '학교폭력 해당 가능성 있음'
+  | '학교폭력 해당 가능성 낮음'
+  | '단순 갈등 또는 학교폭력 아님 가능성';
+
+type SchoolViolenceEligibilityResultSections = {
+  diagnosisType: string;
+  schoolViolenceEligibilityV2: true;
+  inputContent: string;
+  diagnosisResult: SchoolViolenceEligibilityGrade;
+  grounds: string;
+  additionalChecks: string;
+  evidenceMaterials: string;
+  caution: string;
+  nextSteps: string;
+};
+
 type PrincipalResolutionOptions = {
   incidentContent: string;
   incidentDateOrPeriod: string;
@@ -1206,6 +1224,191 @@ const buildTypeMessage = (type: string, analysis: ContentAnalysis): DiagnosisMes
   );
 };
 
+const d01HighRiskKeywords = [
+  '폭행',
+  '때림',
+  '맞음',
+  '밀침',
+  '욕설',
+  '협박',
+  '모욕',
+  '따돌림',
+  '왕따',
+  '괴롭힘',
+  '단체방',
+  '단톡방',
+  '카톡',
+  '카카오톡',
+  'dm',
+  '인스타',
+  '사진유포',
+  '사진 유포',
+  '동영상유포',
+  '유포',
+  '금품요구',
+  '금품 요구',
+  '돈요구',
+  '돈 요구',
+  '갈취',
+  '강요',
+  '지속',
+  '반복',
+  '계속',
+  '보복',
+  '병원',
+  '진단서',
+  '상담',
+  '불안',
+  '우울',
+  '성폭력',
+  '명예훼손',
+  '사이버',
+];
+
+const d01LowRiskKeywords = [
+  '서로 말다툼',
+  '말다툼',
+  '오해',
+  '장난',
+  '일회성',
+  '한번',
+  '사과',
+  '화해',
+  '피해 없음',
+  '피해없음',
+  '다친 곳 없음',
+  '다친곳 없음',
+  '다친 곳 없다',
+  '다친곳 없다',
+];
+
+const d01ContextKeywords = {
+  student: ['학생', '친구', '같은 반', '같은반', '반 친구', '동급생', '선배', '후배'],
+  school: ['학교', '교실', '복도', '운동장', '급식', '수업', '등교', '하교', '학급', '단체방', '단톡방'],
+  harm: ['다침', '상처', '멍', '통증', '병원', '진단서', '불안', '우울', '상담', '공포', '등교 거부'],
+  intent: ['고의', '일부러', '반복', '지속', '계속', '집단', '여러 명', '여러명', '단체로', '보복'],
+};
+
+const d01EvidenceMaterials = [
+  '문자, 카카오톡, DM, 단체방 캡처',
+  '사진, 동영상, 녹음파일',
+  '병원 진단서 또는 진료확인서',
+  '위클래스 상담확인서',
+  '외부 전문기관 상담확인서',
+  '목격자 진술',
+  '담임교사 또는 학교 상담 기록',
+  '사건 경위 메모',
+];
+
+const d01NextStepsByGrade: Record<SchoolViolenceEligibilityGrade, string[]> = {
+  '학교폭력 해당 가능성 높음': [
+    '신고 전후 사실관계와 증거를 시간순으로 정리해야 합니다.',
+    '피해 내용, 발생일시, 장소, 가해학생, 목격자를 구체화해야 합니다.',
+    '긴급보호조치, 분리조치, 상담자료 확보 필요성을 검토해 주세요.',
+  ],
+  '학교폭력 해당 가능성 있음': [
+    '단순 갈등인지 학교폭력 사안인지 추가 확인이 필요합니다.',
+    '피해 정도, 반복성, 고의성, 학생 사이의 관계성을 확인해 주세요.',
+    '증거자료를 먼저 정리한 후 신고 또는 상담을 검토해 주세요.',
+  ],
+  '학교폭력 해당 가능성 낮음': [
+    '학교폭력보다는 학생 간 갈등 또는 생활지도 사안일 가능성이 있습니다.',
+    '다만 피해감정, 반복 여부, 추가 증거에 따라 달라질 수 있습니다.',
+    '학교 상담, 담임 면담, 화해중재를 우선 검토해 볼 수 있습니다.',
+  ],
+  '단순 갈등 또는 학교폭력 아님 가능성': [
+    '현재 입력내용만으로는 학교폭력 해당성이 약해 보입니다.',
+    '감정 대립, 오해, 일회성 다툼 가능성이 있는지 확인해 주세요.',
+    '추가 피해나 반복 발생 시 다시 진단하고 자료를 정리해 주세요.',
+  ],
+};
+
+const getMatchedD01Keywords = (content: string, keywords: string[]) =>
+  keywords.filter((keyword) => content.includes(keyword.toLowerCase()));
+
+const hasD01Keyword = (content: string, keywords: string[]) =>
+  getMatchedD01Keywords(content, keywords).length > 0;
+
+const calculateSchoolViolenceEligibilityResult = (
+  content: string
+): SchoolViolenceEligibilityResultSections => {
+  const inputContent = content.trim();
+  const normalized = inputContent.toLowerCase();
+  const compact = normalized.replace(/\s/g, '');
+  const highRiskMatches = getMatchedD01Keywords(normalized, d01HighRiskKeywords);
+  const lowRiskMatches = getMatchedD01Keywords(normalized, d01LowRiskKeywords);
+  const hasStudentContext =
+    hasD01Keyword(normalized, d01ContextKeywords.student) ||
+    hasD01Keyword(compact, d01ContextKeywords.student);
+  const hasSchoolContext =
+    hasD01Keyword(normalized, d01ContextKeywords.school) ||
+    hasD01Keyword(compact, d01ContextKeywords.school);
+  const hasHarm =
+    hasD01Keyword(normalized, d01ContextKeywords.harm) ||
+    hasD01Keyword(compact, d01ContextKeywords.harm);
+  const hasIntent =
+    hasD01Keyword(normalized, d01ContextKeywords.intent) ||
+    hasD01Keyword(compact, d01ContextKeywords.intent);
+
+  let score = highRiskMatches.length * 2 - lowRiskMatches.length * 2;
+  if (hasStudentContext) score += 2;
+  if (hasSchoolContext) score += 2;
+  if (hasHarm) score += 2;
+  if (hasIntent) score += 2;
+
+  const diagnosisResult: SchoolViolenceEligibilityGrade =
+    score >= 10
+      ? '학교폭력 해당 가능성 높음'
+      : score >= 5
+        ? '학교폭력 해당 가능성 있음'
+        : score >= 1
+          ? '학교폭력 해당 가능성 낮음'
+          : '단순 갈등 또는 학교폭력 아님 가능성';
+
+  const grounds = [
+    hasStudentContext
+      ? '학생 간 사건으로 볼 수 있는 표현이 포함되어 있습니다.'
+      : '관련 당사자가 학생인지 추가 확인이 필요합니다.',
+    hasSchoolContext
+      ? '학교 내 또는 학교생활과 관련된 사건으로 볼 수 있는 표현이 있습니다.'
+      : '학교 안 사건인지, 등하교·학급·단체방 등 학교생활 관련성이 있는지 확인이 필요합니다.',
+    highRiskMatches.length > 0
+      ? `학교폭력 유형 또는 피해 정황과 관련될 수 있는 표현이 확인됩니다: ${highRiskMatches.join(', ')}.`
+      : '신체폭력, 언어폭력, 사이버폭력, 금품갈취, 강요, 따돌림 등 구체 유형은 아직 뚜렷하지 않습니다.',
+    hasHarm
+      ? '피해학생의 신체적 또는 정신적 피해를 의심할 수 있는 표현이 있습니다.'
+      : '피해학생의 신체적·정신적 피해 정도는 추가 확인이 필요합니다.',
+    hasIntent
+      ? '고의성, 반복성, 지속성, 집단성 또는 보복성 관련 표현이 포함되어 있습니다.'
+      : '고의성, 반복성, 지속성, 집단성, 보복성 여부는 더 확인해야 합니다.',
+    lowRiskMatches.length > 0
+      ? `다만 해당 가능성을 낮출 수 있는 표현도 함께 확인됩니다: ${lowRiskMatches.join(', ')}.`
+      : '단순 장난, 오해, 일회성 다툼, 사과·화해 여부는 별도로 확인하는 것이 좋습니다.',
+  ];
+
+  const additionalChecks = [
+    '가해학생과 피해학생이 모두 학생인지 확인해 주세요.',
+    '사건이 학교 안에서 발생했는지, 또는 등하교·학급·단체방 등 학교생활과 관련되는지 확인해 주세요.',
+    '폭행, 욕설, 협박, 모욕, 따돌림, 사이버폭력, 금품요구, 강요 등 구체 유형을 구분해 주세요.',
+    '피해학생에게 신체 상처, 병원 진료, 불안·우울, 상담 필요 등 피해가 있었는지 확인해 주세요.',
+    '일회성인지, 반복·지속되었는지, 여러 학생이 함께했는지, 보복 목적이 있었는지 확인해 주세요.',
+    '서로 말다툼, 오해, 장난, 사과·화해 등 단순 갈등으로 볼 사정이 있는지 함께 확인해 주세요.',
+  ];
+
+  return {
+    diagnosisType: '학교폭력 해당성 진단',
+    schoolViolenceEligibilityV2: true,
+    inputContent,
+    diagnosisResult,
+    grounds: grounds.join('\n'),
+    additionalChecks: additionalChecks.join('\n'),
+    evidenceMaterials: d01EvidenceMaterials.join('\n'),
+    caution:
+      '본 결과는 입력내용을 기준으로 한 1차 검토자료이며, 법률적 확정판단은 아닙니다. 실제 판단은 추가 사실관계와 증거자료에 따라 달라질 수 있습니다.',
+    nextSteps: d01NextStepsByGrade[diagnosisResult].join('\n'),
+  };
+};
+
 const buildResult = (type: string, content: string) => {
   const analysis = analyzeContent(content);
   const message = buildTypeMessage(type, analysis);
@@ -1361,12 +1564,23 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
 
     const resultId = Date.now().toString();
     const storageKey = `${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`;
+    const schoolViolenceEligibilityResult =
+      params.type === 'D01' ? calculateSchoolViolenceEligibilityResult(content) : null;
     const measureResult = isMeasure ? calculateMeasureResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
     const principalResolutionResult = isPrincipalResolution
       ? calculatePrincipalResolutionResult(principalResolutionOptions)
       : null;
-    const result = adminAppealResult
+    const result = schoolViolenceEligibilityResult
+      ? [
+          `진단결과: ${schoolViolenceEligibilityResult.diagnosisResult}`,
+          `판단근거:\n${schoolViolenceEligibilityResult.grounds}`,
+          `추가로 확인할 사항:\n${schoolViolenceEligibilityResult.additionalChecks}`,
+          `준비할 증거자료:\n${schoolViolenceEligibilityResult.evidenceMaterials}`,
+          `다음 대응방향:\n${schoolViolenceEligibilityResult.nextSteps}`,
+          `주의사항:\n${schoolViolenceEligibilityResult.caution}`,
+        ].join('\n\n')
+      : adminAppealResult
       ? [
           `행정심판 청구기간 검토: ${adminAppealResult.filingPeriodReview}`,
           `행정심판 검토 필요성: ${adminAppealResult.appealNeed}`,
@@ -1395,7 +1609,9 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `다음 대응방향:\n${principalResolutionResult.nextSteps}`,
         ].join('\n\n')
       : buildResult(params.type, content);
-    const savedContent = adminAppealResult
+    const savedContent = schoolViolenceEligibilityResult
+      ? schoolViolenceEligibilityResult.inputContent
+      : adminAppealResult
       ? [
           `현재 입장: ${adminAppealResult.currentPosition}`,
           `심의 진행 상태: ${adminAppealResult.reviewStatus}`,
@@ -1413,14 +1629,17 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
       JSON.stringify({
         type: adminAppealResult
           ? adminAppealResult.diagnosisType
-          : measureResult
-            ? measureResult.diagnosisType
-            : principalResolutionResult
-              ? principalResolutionResult.diagnosisType
-            : params.type,
+          : schoolViolenceEligibilityResult
+            ? schoolViolenceEligibilityResult.diagnosisType
+            : measureResult
+              ? measureResult.diagnosisType
+              : principalResolutionResult
+                ? principalResolutionResult.diagnosisType
+                : params.type,
         content: savedContent,
         result,
-        resultSections: adminAppealResult ?? measureResult ?? principalResolutionResult,
+        resultSections:
+          schoolViolenceEligibilityResult ?? adminAppealResult ?? measureResult ?? principalResolutionResult,
       })
     );
 
