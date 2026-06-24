@@ -960,6 +960,24 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
   if (options.weaponUse) seriousnessScore += 6;
   if (options.retaliation) seriousnessScore += 5;
 
+  const isVerbalOnlyMinorCase =
+    options.verbalViolence &&
+    !options.physicalViolence &&
+    !options.cyberViolence &&
+    !options.extortion &&
+    !options.coercion &&
+    !options.sexualIssue &&
+    !options.groupAction &&
+    !options.weaponUse &&
+    !options.retaliation &&
+    !options.victimDisabled;
+  const isVerbalOnlyLightFrequency =
+    isVerbalOnlyMinorCase &&
+    options.damageLevel === 'minor' &&
+    (options.frequency === 'once' || options.frequency === 'two-three') &&
+    !options.continued &&
+    (options.duration === 'one-day' || options.duration === 'within-week');
+
   let persistenceScore = 0;
   if (options.continued) persistenceScore += 2;
   if (options.frequency === 'two-three') persistenceScore += 2;
@@ -971,6 +989,9 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
   let intentionalityScore = 0;
   if (options.intentional) intentionalityScore += 4;
   if (options.retaliation || options.weaponUse || options.groupAction) intentionalityScore += 1;
+  if (isVerbalOnlyMinorCase) {
+    intentionalityScore = Math.min(intentionalityScore, 2);
+  }
 
   const remorseScore = options.remorse ? -2 : 2;
   const reconciliationScore = options.reconciliation ? -2 : options.apology ? -1 : 2;
@@ -995,6 +1016,9 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
   if (persistenceScore >= 4) aggravatingFactors.push('발생 횟수와 기간상 지속성이 높게 평가될 수 있습니다.');
   if (options.intentional) aggravatingFactors.push('고의성이 인정되면 조치수위가 높아질 수 있습니다.');
 
+  if (isVerbalOnlyMinorCase) {
+    mitigatingFactors.push('언어폭력 단독 사안으로 신체폭력, 금품갈취, 강요·협박성, 성 관련 사안 등 중대 유형은 입력되지 않았습니다.');
+  }
   if (options.remorse) mitigatingFactors.push('반성 정황은 감경 요소로 검토될 수 있습니다.');
   if (options.apology) mitigatingFactors.push('사과는 피해 회복 노력으로 볼 수 있습니다.');
   if (options.reconciliation) mitigatingFactors.push('화해 또는 합의 정황은 감경 가능 요소입니다.');
@@ -1009,6 +1033,9 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
   }
   if (options.statementSpecificity === 'low') {
     cautions.push('피해진술이 구체적이지 않으면 일시, 장소, 행위자, 목격자, 피해 상태를 보완해야 합니다.');
+  }
+  if (isVerbalOnlyLightFrequency) {
+    cautions.push('언어폭력 단독이고 피해가 경미하며 1회 또는 2~3회 정도의 단기간 사안이면, 중대 가중요소가 추가로 확인되지 않는 한 1~3호 범위를 우선 검토합니다.');
   }
   if (options.factualDispute) {
     cautions.push('사실관계 다툼이 있는 경우 조치수위보다 인정되는 사실 범위를 먼저 정리해야 합니다.');
@@ -1064,6 +1091,10 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
     expectedMeasure = '2~4호 가능성';
   }
 
+  if (isVerbalOnlyLightFrequency && !options.previousSimilarCase) {
+    expectedMeasure = '1~3호 가능성';
+  }
+
   if (
     options.verbalViolence &&
     options.frequency === 'once' &&
@@ -1088,6 +1119,12 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
   if (remorseScore < 0 || reconciliationScore < 0 || guidanceScore < 0) {
     reasons.push('반성, 사과, 화해, 보호자 노력, 초범 여부는 감경 또는 선도 가능성 요소로 반영했습니다.');
   }
+  if (isVerbalOnlyMinorCase) {
+    reasons.push('언어폭력 단독 사안은 고의성이 입력되더라도 신체폭력, 금품갈취, 강요·협박성, 성 관련 사안이 없는 경우 고의성 점수 상한을 낮춰 반영했습니다.');
+  }
+  if (isVerbalOnlyLightFrequency) {
+    reasons.push('언어폭력 단독, 경미 피해, 1회 또는 2~3회 정도의 단기간 사안이므로 기본 조치 범위는 1~3호를 우선 표시했습니다.');
+  }
   if (highRiskFlags) {
     reasons.push('집단행위, 보복행위, 성 관련 사안, 장애학생 피해, 위험물 사용 중 중대 위험 요소가 포함되어 높은 조치 가능성을 우선 표시했습니다.');
   }
@@ -1098,7 +1135,11 @@ const calculateMeasureResult = (options: MeasureOptions): MeasureResultSections 
   const factorAnalysis = [
     `심각성: ${seriousnessScore}점 - 피해 정도, 폭력 유형, 집단성, 위험물, 보복 여부를 반영했습니다.`,
     `지속성: ${persistenceScore}점 - 발생 횟수, 발생 기간, 지속성 여부를 반영했습니다.`,
-    `고의성: ${intentionalityScore}점 - 고의성 및 계획적·보복적 정황을 반영했습니다.`,
+    `고의성: ${intentionalityScore}점 - ${
+      isVerbalOnlyMinorCase
+        ? '언어폭력 단독 사안은 고의성 점수 상한을 낮춰 반영했습니다.'
+        : '고의성 및 계획적·보복적 정황을 반영했습니다.'
+    }`,
     `반성 정도: ${remorseScore}점 - ${options.remorse ? '반성 정황이 있습니다.' : '반성 정황이 부족합니다.'}`,
     `화해 정도: ${reconciliationScore}점 - ${
       options.reconciliation ? '화해 또는 합의 정황이 있습니다.' : options.apology ? '사과는 있으나 화해 또는 합의는 추가 확인이 필요합니다.' : '사과·화해 정황이 부족합니다.'
