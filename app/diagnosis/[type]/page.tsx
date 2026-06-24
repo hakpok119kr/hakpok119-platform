@@ -73,8 +73,10 @@ type MeasureOptions = {
 
 type MeasureResultSections = {
   diagnosisType: string;
+  d04MeasureV2?: boolean;
   inputSummary: string;
   factorAnalysis: string;
+  judgmentGrade?: string;
   expectedMeasure: string;
   reasons: string;
   mitigatingFactors: string;
@@ -1236,6 +1238,159 @@ const hasD05Keyword = (content: string, keywords: string[]) => {
   return keywords.some((keyword) => normalized.includes(keyword.replace(/\s/g, '').toLowerCase()));
 };
 
+const hasD04Keyword = (content: string, keywords: string[]) => {
+  const normalized = content.replace(/\s/g, '').toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword.replace(/\s/g, '').toLowerCase()));
+};
+
+const formatMatchedLabels = (labels: string[], fallback: string) =>
+  labels.length > 0 ? labels.join('\n') : fallback;
+
+const calculateD04MeasureResult = (options: MeasureOptions): MeasureResultSections => {
+  const content = options.incidentContent;
+  const noViolenceFactors = [
+    { label: '장난 수준', matched: hasD04Keyword(content, ['장난', '장난 수준', '놀다가']) },
+    { label: '오해', matched: options.simpleConflict || options.unclearSchoolViolence || hasD04Keyword(content, ['오해', '착오']) },
+    { label: '우발적 충돌', matched: !options.intentional && hasD04Keyword(content, ['우발', '실수', '충돌']) },
+    { label: '피해 사실 불명확', matched: options.unclearSchoolViolence || options.factualDispute },
+    { label: '증거 부족', matched: !options.hasEvidence && !options.objectiveEvidence },
+    { label: '지속성 없음', matched: options.frequency === 'once' && !options.continued && options.duration === 'one-day' },
+    { label: '고의성 없음', matched: !options.intentional || hasD04Keyword(content, ['고의 없음', '고의성 없음']) },
+    { label: '피해 진술만 있음', matched: options.statementSpecificity !== 'high' && !options.objectiveEvidence },
+    { label: '상호 다툼', matched: options.mutualConflict || hasD04Keyword(content, ['상호 다툼', '서로 다툼', '쌍방']) },
+    { label: '단순 말다툼', matched: options.simpleConflict || hasD04Keyword(content, ['단순 말다툼', '말다툼']) },
+  ];
+  const noActionFactors = [
+    { label: '경미한 사안', matched: options.damageLevel === 'minor' || hasD04Keyword(content, ['경미', '가벼운']) },
+    { label: '즉시 사과', matched: options.apology && hasD04Keyword(content, ['즉시 사과', '바로 사과', '당일 사과']) },
+    { label: '화해 완료', matched: options.reconciliation || hasD04Keyword(content, ['화해 완료', '화해함', '합의']) },
+    { label: '피해 회복', matched: hasD04Keyword(content, ['피해 회복', '회복 완료', '배상', '복구']) },
+    { label: '재발 없음', matched: !options.previousSimilarCase && hasD04Keyword(content, ['재발 없음', '이후 없음']) },
+    { label: '1회 발생', matched: options.frequency === 'once' },
+    { label: '보호자 간 합의', matched: options.guardianEffort && hasD04Keyword(content, ['보호자 합의', '학부모 합의', '부모 합의']) },
+    { label: '피해학생 측 처벌 불원', matched: hasD04Keyword(content, ['처벌 불원', '조치 원하지 않음', '처벌 원하지 않음']) },
+    { label: '반성 있음', matched: options.remorse },
+    { label: '교육적 해결 가능', matched: options.lowMeasureNeed || hasD04Keyword(content, ['교육적 해결', '지도 가능']) },
+  ];
+  const lightFactors = [
+    { label: '서면사과 필요', matched: hasD04Keyword(content, ['서면사과', '서면 사과']) || options.apology },
+    { label: '접촉금지 필요', matched: hasD04Keyword(content, ['접촉금지', '접촉 금지']) },
+    { label: '교내봉사 필요', matched: hasD04Keyword(content, ['교내봉사', '학교에서의 봉사']) },
+    { label: '언어폭력', matched: options.verbalViolence || hasD04Keyword(content, ['언어폭력', '욕설', '폭언']) },
+    { label: '놀림', matched: hasD04Keyword(content, ['놀림', '조롱']) },
+    { label: '따돌림 초기', matched: hasD04Keyword(content, ['따돌림 초기', '초기 따돌림']) },
+    { label: '단순 폭행', matched: options.physicalViolence && options.damageLevel === 'minor' },
+    { label: '경미한 신체 접촉', matched: options.physicalViolence && hasD04Keyword(content, ['경미한 신체 접촉', '밀침', '툭']) },
+    { label: '반복성 일부 있음', matched: options.frequency === 'two-three' },
+  ];
+  const middleFactors = [
+    { label: '지속적 괴롭힘', matched: options.continued || hasD04Keyword(content, ['지속적 괴롭힘', '계속 괴롭힘']) },
+    { label: '반복적 폭언', matched: options.verbalViolence && options.frequency !== 'once' },
+    { label: '사이버폭력', matched: options.cyberViolence || hasD04Keyword(content, ['사이버폭력', '온라인', '단톡방']) },
+    { label: '모욕성 게시', matched: hasD04Keyword(content, ['모욕성 게시', '게시글', 'SNS 게시', 'sns 게시']) },
+    { label: '단체 따돌림', matched: options.groupAction && hasD04Keyword(content, ['따돌림', '왕따']) },
+    { label: '피해 회복 부족', matched: !options.reconciliation && !hasD04Keyword(content, ['피해 회복', '화해 완료']) },
+    { label: '반성 부족', matched: !options.remorse },
+    { label: '상담 또는 특별교육 필요', matched: hasD04Keyword(content, ['상담 필요', '특별교육', '심리치료']) },
+  ];
+  const heavyFactors = [
+    { label: '출석정지 필요', matched: hasD04Keyword(content, ['출석정지', '출석 정지']) },
+    { label: '학급분리 필요', matched: hasD04Keyword(content, ['학급분리', '학급 교체', '분리 필요']) },
+    { label: '피해학생 불안', matched: hasD04Keyword(content, ['불안', '두려움', '공포']) },
+    { label: '보복 우려', matched: options.retaliation || hasD04Keyword(content, ['보복 우려', '보복']) },
+    { label: '반복 가해', matched: options.frequency === 'repeated' || options.previousSimilarCase },
+    { label: '고의성 높음', matched: options.intentional },
+    { label: '피해 회복 없음', matched: !options.reconciliation && !options.apology },
+    { label: '반성 없음', matched: !options.remorse },
+    { label: '같은 반 유지 어려움', matched: hasD04Keyword(content, ['같은 반 어렵', '같은 반 유지 어려움']) },
+  ];
+  const severeFactors = [
+    { label: '전학 필요', matched: hasD04Keyword(content, ['전학 필요', '전학']) },
+    { label: '퇴학 가능', matched: hasD04Keyword(content, ['퇴학', '퇴학처분']) },
+    { label: '중대한 신체폭력', matched: options.physicalViolence && options.damageLevel === 'severe' },
+    { label: '성폭력', matched: options.sexualIssue || hasD04Keyword(content, ['성폭력', '성추행', '성희롱']) },
+    { label: '집단폭행', matched: options.groupAction && options.physicalViolence },
+    { label: '지속적 협박', matched: options.coercion || hasD04Keyword(content, ['지속적 협박', '협박']) },
+    { label: '보복행위', matched: options.retaliation },
+    { label: '피해학생 등교 곤란', matched: hasD04Keyword(content, ['등교 곤란', '학교 못 감', '등교하지 못']) },
+    { label: '재발 위험 높음', matched: options.previousSimilarCase || hasD04Keyword(content, ['재발 위험', '또 하겠다']) },
+    { label: '중대한 사이버폭력', matched: options.cyberViolence && options.damageLevel === 'severe' },
+  ];
+
+  const count = (items: { matched: boolean }[]) => items.filter((item) => item.matched).length;
+  const noViolenceScore = count(noViolenceFactors);
+  const noActionScore = count(noActionFactors);
+  const lightScore = count(lightFactors);
+  const middleScore = count(middleFactors);
+  const heavyScore = count(heavyFactors);
+  const severeScore = count(severeFactors);
+  const matchedNoViolence = noViolenceFactors.filter((factor) => factor.matched).map((factor) => factor.label);
+  const matchedNoAction = noActionFactors.filter((factor) => factor.matched).map((factor) => factor.label);
+  const matchedLight = lightFactors.filter((factor) => factor.matched).map((factor) => factor.label);
+  const matchedMiddle = middleFactors.filter((factor) => factor.matched).map((factor) => factor.label);
+  const matchedHeavy = heavyFactors.filter((factor) => factor.matched).map((factor) => factor.label);
+  const matchedSevere = severeFactors.filter((factor) => factor.matched).map((factor) => factor.label);
+  const aggravatingLabels = [...matchedLight, ...matchedMiddle, ...matchedHeavy, ...matchedSevere];
+  const mitigatingLabels = [...matchedNoViolence, ...matchedNoAction];
+
+  let expectedMeasure = '1호~3호 수준의 경미한 조치 가능성이 있습니다.';
+  let judgmentGrade = '경미 조치 검토';
+  if (severeScore >= 2 || options.sexualIssue || (options.groupAction && options.physicalViolence && options.damageLevel !== 'minor')) {
+    expectedMeasure = '8호~9호 수준의 매우 중대한 조치 가능성이 있어 즉시 전문가 상담이 필요합니다.';
+    judgmentGrade = '매우 중대';
+  } else if (heavyScore >= 3 || (heavyScore >= 2 && middleScore >= 2)) {
+    expectedMeasure = '6호 이상 중한 조치 가능성이 있어 심의 전 의견서와 증거 정리가 필요합니다.';
+    judgmentGrade = '중대';
+  } else if (middleScore >= 2 || options.cyberViolence || (options.groupAction && !options.reconciliation)) {
+    expectedMeasure = '4호 이상 조치 가능성이 있어 생활기록부 기재 위험을 검토해야 합니다.';
+    judgmentGrade = '중간 이상';
+  } else if (noViolenceScore >= 4 && severeScore === 0 && heavyScore === 0 && middleScore <= 1) {
+    expectedMeasure = '학교폭력 아님 가능성이 있습니다.';
+    judgmentGrade = '학교폭력 해당성 낮음';
+  } else if (noActionScore >= 4 && severeScore === 0 && heavyScore === 0 && middleScore <= 1) {
+    expectedMeasure = '학교폭력에는 해당할 수 있으나 조치없음 또는 경미한 조치 가능성이 있습니다.';
+    judgmentGrade = '조치 필요성 낮음';
+  }
+
+  const inputSummary = [
+    '진단유형: D04 전체 조치수위 예측',
+    `현재 입장: ${options.position === 'perpetrator' ? '가해학생 측' : '피해학생 측'}`,
+    `사건 내용: ${content}`,
+    `피해 정도: ${getDamageLevelLabel(options.damageLevel)}`,
+    `발생 횟수: ${getFrequencyLabel(options.frequency)}`,
+    `발생 기간: ${getDurationLabel(options.duration)}`,
+    `지속성: ${options.continued ? '있음' : '없음'}`,
+    `증거자료: ${options.hasEvidence || options.objectiveEvidence ? '있음' : '부족하거나 미입력'}`,
+    `사실관계 다툼: ${options.factualDispute ? '있음' : '명확한 다툼 없음'}`,
+  ].join('\n');
+
+  return {
+    diagnosisType: 'D04 전체 조치수위 예측',
+    d04MeasureV2: true,
+    inputSummary,
+    factorAnalysis: [
+      `학교폭력 아님 요소: ${noViolenceScore}개`,
+      `조치없음 요소: ${noActionScore}개`,
+      `1호~3호 요소: ${lightScore}개`,
+      `4호~5호 요소: ${middleScore}개`,
+      `6호~7호 요소: ${heavyScore}개`,
+      `8호~9호 요소: ${severeScore}개`,
+    ].join('\n'),
+    judgmentGrade,
+    expectedMeasure,
+    reasons: formatMatchedLabels(
+      [...matchedNoViolence, ...matchedNoAction, ...matchedLight, ...matchedMiddle, ...matchedHeavy, ...matchedSevere],
+      '현재 입력내용만으로는 뚜렷한 판단 근거가 충분히 확인되지 않습니다.'
+    ),
+    mitigatingFactors: formatMatchedLabels(mitigatingLabels, '명확한 감경요소가 입력되지 않았습니다.'),
+    aggravatingFactors: formatMatchedLabels(aggravatingLabels, '명확한 가중요소가 입력되지 않았습니다.'),
+    caution:
+      'D04는 학교폭력 아님, 조치없음, 1호부터 9호까지의 전체 조치수위를 예측하는 1차 진단입니다. 실제 결론은 학교 조사, 증거자료, 피해 정도, 고의성, 지속성, 반성 및 회복 노력, 심의위원회 판단에 따라 달라질 수 있습니다. 특히 4호 이상 가능성이 보이면 생활기록부 기재와 행정심판 가능성까지 함께 검토해야 합니다.',
+    nextSteps:
+      '입력한 사안의 예상 조치수위가 실제 심의에서 어떻게 평가될지 확인하려면 상담예약을 통해 사건 경위, 증거자료, 진술서, 반성 및 피해회복 자료를 함께 검토해 주세요.',
+  };
+};
+
 const calculateD05RiskResult = (options: MeasureOptions): D05RiskResultSections => {
   const content = options.incidentContent;
   const hasThreat = hasD05Keyword(content, ['협박', '위협', '겁을 줌', '죽이겠다', '가만두지 않겠다']);
@@ -1745,6 +1900,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
       victimNeedsChecked: false,
     });
   const router = useRouter();
+  const isD04Measure = params.type === 'D04';
   const isD05Risk = params.type === 'D05';
   const isMeasure = ['measure', 'action-level', 'D04', 'D05'].includes(params.type);
   const isAdminAppeal = ['D08', 'admin-appeal', 'appeal'].includes(params.type);
@@ -1817,8 +1973,9 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     const storageKey = `${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`;
     const schoolViolenceEligibilityResult =
       params.type === 'D01' ? calculateSchoolViolenceEligibilityResult(content) : null;
+    const d04MeasureResult = isD04Measure ? calculateD04MeasureResult(measureOptions) : null;
     const d05RiskResult = isD05Risk ? calculateD05RiskResult(measureOptions) : null;
-    const measureResult = isMeasure && !isD05Risk ? calculateMeasureResult(measureOptions) : null;
+    const measureResult = isMeasure && !isD04Measure && !isD05Risk ? calculateMeasureResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
     const principalResolutionResult = isPrincipalResolution
       ? calculatePrincipalResolutionResult(principalResolutionOptions)
@@ -1852,6 +2009,16 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `다음 대응방향:\n${d05RiskResult.nextSteps}`,
           `주의사항:\n${d05RiskResult.caution}`,
         ].join('\n\n')
+      : d04MeasureResult
+      ? [
+          `예상 조치수위: ${d04MeasureResult.expectedMeasure}`,
+          `판단 등급: ${d04MeasureResult.judgmentGrade}`,
+          `주요 판단 근거:\n${d04MeasureResult.reasons}`,
+          `감경요소:\n${d04MeasureResult.mitigatingFactors}`,
+          `가중요소:\n${d04MeasureResult.aggravatingFactors}`,
+          `실무상 주의사항:\n${d04MeasureResult.caution}`,
+          `상담예약 유도:\n${d04MeasureResult.nextSteps}`,
+        ].join('\n\n')
       : measureResult
       ? [
           `예상 조치수위: ${measureResult.expectedMeasure}`,
@@ -1882,6 +2049,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `조치결정 통지일: ${adminAppealOptions.noticeDate || '미입력'}`,
           adminAppealResult.decisionSummary,
         ].join('\n')
+      : d04MeasureResult
+        ? d04MeasureResult.inputSummary
       : measureResult
         ? measureResult.inputSummary
         : d05RiskResult
@@ -1899,6 +2068,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
             ? schoolViolenceEligibilityResult.diagnosisType
             : d05RiskResult
               ? d05RiskResult.diagnosisType
+            : d04MeasureResult
+              ? d04MeasureResult.diagnosisType
             : measureResult
               ? measureResult.diagnosisType
               : principalResolutionResult
@@ -1907,7 +2078,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         content: savedContent,
         result,
         resultSections:
-          schoolViolenceEligibilityResult ?? adminAppealResult ?? d05RiskResult ?? measureResult ?? principalResolutionResult,
+          schoolViolenceEligibilityResult ?? adminAppealResult ?? d05RiskResult ?? d04MeasureResult ?? measureResult ?? principalResolutionResult,
       })
     );
 
