@@ -14,8 +14,8 @@ type DiagnosisResult = {
     adminAppealV2?: boolean;
     principalResolutionV2?: boolean;
     schoolViolenceEligibilityV2?: boolean;
-    d04MeasureV2?: boolean;
     d05RiskV2?: boolean;
+    measureScoreV2?: boolean;
     inputContent?: string;
     diagnosisResult?: string;
     riskLevel?: string;
@@ -30,9 +30,13 @@ type DiagnosisResult = {
     schoolRecordPossibility?: string;
     admissionImpactPossibility?: string;
     factorAnalysis?: string;
-    judgmentGrade?: string;
+    baseScore?: string;
+    aggravatingItems?: string;
+    mitigatingItems?: string;
+    finalScore?: string;
     expectedMeasure?: string;
     reasons?: string;
+    comprehensiveOpinion?: string;
     mitigatingFactors?: string;
     aggravatingFactors?: string;
     currentPosition?: string;
@@ -88,61 +92,68 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
             </p>
           </section>
 
-          {diagnosis.resultSections?.d04MeasureV2 ? (
+          {diagnosis.resultSections?.measureScoreV2 ? (
             <>
               <section>
-                <h2 className="mb-2 font-bold">입력내용 요약</h2>
+                <h2 className="mb-2 font-bold">선택한 항목 요약</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.inputSummary ?? diagnosis.content}
+                  {diagnosis.resultSections.inputSummary}
                 </p>
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">예상 조치수위</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.expectedMeasure}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">판단 등급</h2>
+                <h2 className="mb-2 font-bold">기본점수</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.judgmentGrade}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">주요 판단 근거</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.reasons}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">감경요소</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.mitigatingFactors}
+                  {diagnosis.resultSections.baseScore}
                 </p>
               </section>
 
               <section>
                 <h2 className="mb-2 font-bold">가중요소</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.aggravatingFactors}
+                  {diagnosis.resultSections.aggravatingItems}
                 </p>
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">실무상 주의사항</h2>
+                <h2 className="mb-2 font-bold">감경요소</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.mitigatingItems}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">최종점수</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.finalScore}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">예상조치</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.expectedMeasure}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">주요 판단근거</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.reasons}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">종합의견</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.comprehensiveOpinion}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">유의사항</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
                   {diagnosis.resultSections.caution}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">상담예약 유도 문구</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.nextSteps}
                 </p>
               </section>
             </>
