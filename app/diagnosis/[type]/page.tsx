@@ -2521,13 +2521,21 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           </section>
 
           <section>
-            <label className="mb-2 block font-bold">사건개요</label>
+            <label className="mb-2 block font-bold">사실관계 요약 (선택입력)</label>
             <textarea
               className="h-36 w-full rounded-xl border p-3"
-              placeholder="예: 체육시간 중 반복적으로 밀치거나 놀린 사실이 있음"
+              placeholder={`예)
+• 체육시간 중 친구를 1회 밀쳤습니다.
+• 단톡방에서 욕설이 3일간 계속되었습니다.
+• 쉬는 시간에 별명을 반복적으로 불렀습니다.`}
               value={measureOptions.incidentContent}
               onChange={(event) => updateMeasureOption('incidentContent', event.target.value)}
             />
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+              ※ 사건의 발생경위, 장소, 횟수, 주요 내용을 간략히 입력해 주세요.
+              {'\n'}※ 입력하지 않아도 진단은 가능합니다.
+              {'\n'}※ 입력한 내용은 진단 결과 및 PDF 보고서에 함께 표시됩니다.
+            </p>
           </section>
 
           <section className="space-y-4">

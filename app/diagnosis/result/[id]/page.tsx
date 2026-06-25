@@ -120,9 +120,9 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                     <dd>{diagnosis.resultSections.inputDetails?.reconciliation ?? '-'}</dd>
                   </dl>
                   <div className="mt-4">
-                    <h3 className="mb-2 font-bold">사건개요</h3>
+                    <h3 className="mb-2 font-bold">사실관계 요약</h3>
                     <p className="whitespace-pre-wrap">
-                      {diagnosis.resultSections.inputDetails?.caseSummary || diagnosis.resultSections.inputDetails?.incidentContent || '입력된 사건개요가 없습니다.'}
+                      {diagnosis.resultSections.inputDetails?.caseSummary || diagnosis.resultSections.inputDetails?.incidentContent || '입력된 사실관계 요약이 없습니다.'}
                     </p>
                   </div>
                 </div>
