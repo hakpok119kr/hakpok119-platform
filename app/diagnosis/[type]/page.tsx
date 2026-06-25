@@ -80,10 +80,21 @@ type MeasureOptions = {
 
 type MeasureScoreLevel = 'very-high' | 'high' | 'middle' | 'low' | 'none';
 
+type D04InputDetails = {
+  severity: string;
+  persistence: string;
+  intentionality: string;
+  remorse: string;
+  reconciliation: string;
+  caseSummary: string;
+  incidentContent: string;
+};
+
 type MeasureResultSections = {
   diagnosisType: string;
   measureScoreV2?: boolean;
   inputSummary: string;
+  inputDetails?: D04InputDetails;
   factorAnalysis: string;
   baseScore?: string;
   aggravatingItems?: string;
@@ -241,6 +252,14 @@ const measureScoreOptions: { value: MeasureScoreLevel; label: string }[] = [
   { value: 'low', label: '낮음' },
   { value: 'none', label: '없음' },
 ];
+
+const d04ReadableLevelLabels: Record<MeasureScoreLevel, string> = {
+  'very-high': '매우 높음',
+  high: '높음',
+  middle: '보통',
+  low: '낮음',
+  none: '없음',
+};
 
 const measurePositiveScoreMap: Record<MeasureScoreLevel, number> = {
   'very-high': 4,
@@ -1461,6 +1480,15 @@ const calculateMeasureScoreResult = (options: MeasureOptions): MeasureResultSect
     diagnosisType: '조치수위 예측',
     measureScoreV2: true,
     inputSummary,
+    inputDetails: {
+      severity: d04ReadableLevelLabels[options.severityLevel],
+      persistence: d04ReadableLevelLabels[options.persistenceLevel],
+      intentionality: d04ReadableLevelLabels[options.intentionalityLevel],
+      remorse: d04ReadableLevelLabels[options.remorseLevel],
+      reconciliation: d04ReadableLevelLabels[options.reconciliationLevel],
+      caseSummary: options.incidentContent.trim(),
+      incidentContent: options.incidentContent.trim(),
+    },
     factorAnalysis,
     baseScore: `${baseScore}점`,
     aggravatingItems: `${selectedAggravating}\n보정: +${aggravatingAdjustment}점`,
@@ -2450,6 +2478,16 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
                 </div>
               </fieldset>
             ))}
+          </section>
+
+          <section>
+            <label className="mb-2 block font-bold">사건개요</label>
+            <textarea
+              className="h-36 w-full rounded-xl border p-3"
+              placeholder="예: 체육시간 중 반복적으로 밀치거나 놀린 사실이 있음"
+              value={measureOptions.incidentContent}
+              onChange={(event) => updateMeasureOption('incidentContent', event.target.value)}
+            />
           </section>
 
           <section className="space-y-4">

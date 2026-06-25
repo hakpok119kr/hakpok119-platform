@@ -16,6 +16,15 @@ type DiagnosisResult = {
     schoolViolenceEligibilityV2?: boolean;
     d05RiskV2?: boolean;
     measureScoreV2?: boolean;
+    inputDetails?: {
+      severity: string;
+      persistence: string;
+      intentionality: string;
+      remorse: string;
+      reconciliation: string;
+      caseSummary?: string;
+      incidentContent: string;
+    };
     inputContent?: string;
     diagnosisResult?: string;
     riskLevel?: string;
@@ -95,6 +104,37 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
           {diagnosis.resultSections?.measureScoreV2 ? (
             <>
               <section>
+                <h2 className="mb-2 font-bold">입력내용</h2>
+                <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  <dl className="grid gap-2 sm:grid-cols-[7rem_1fr]">
+                    <dt className="font-bold">심각성</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.severity ?? '-'}</dd>
+                    <dt className="font-bold">지속성</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.persistence ?? '-'}</dd>
+                    <dt className="font-bold">고의성</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.intentionality ?? '-'}</dd>
+                    <dt className="font-bold">반성정도</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.remorse ?? '-'}</dd>
+                    <dt className="font-bold">화해여부</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.reconciliation ?? '-'}</dd>
+                  </dl>
+                  <div className="mt-4">
+                    <h3 className="mb-2 font-bold">사건개요</h3>
+                    <p className="whitespace-pre-wrap">
+                      {diagnosis.resultSections.inputDetails?.caseSummary || diagnosis.resultSections.inputDetails?.incidentContent || '입력된 사건개요가 없습니다.'}
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">진단결과</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
+                  예상 조치수위 : {diagnosis.resultSections.expectedMeasure}
+                </p>
+              </section>
+
+              <section>
                 <h2 className="mb-2 font-bold">선택한 항목 요약</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
                   {diagnosis.resultSections.inputSummary}
@@ -126,13 +166,6 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                 <h2 className="mb-2 font-bold">최종점수</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
                   {diagnosis.resultSections.finalScore}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">예상조치</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.expectedMeasure}
                 </p>
               </section>
 
