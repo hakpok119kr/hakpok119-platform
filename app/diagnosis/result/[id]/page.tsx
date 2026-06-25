@@ -27,6 +27,7 @@ type DiagnosisResult = {
     };
     reasoningPoints?: string[];
     inputContent?: string;
+    factSummary?: string;
     diagnosisResult?: string;
     riskLevel?: string;
     grounds?: string;
@@ -63,6 +64,57 @@ type DiagnosisResult = {
     nextSteps: string;
   };
 };
+
+const circledNumbers = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+
+const splitResultLines = (value?: string) =>
+  value
+    ?.split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean) ?? [];
+
+const renderNumberedItems = (items: string[], emptyMessage: string) => (
+  <ol className="space-y-2 rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+    {items.length ? (
+      items.map((item, index) => (
+        <li key={`${item}-${index}`} className="flex gap-2 leading-7">
+          <span className="shrink-0 font-bold text-slate-700">{circledNumbers[index] ?? `${index + 1}.`}</span>
+          <span>{item}</span>
+        </li>
+      ))
+    ) : (
+      <li className="leading-7">{emptyMessage}</li>
+    )}
+  </ol>
+);
+
+const renderChecklistItems = (items: string[], emptyMessage: string) => (
+  <ul className="space-y-2 rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+    {items.length ? (
+      items.map((item, index) => (
+        <li key={`${item}-${index}`} className="flex gap-2 leading-7">
+          <span className="shrink-0 font-bold text-slate-700">□</span>
+          <span>{item}</span>
+        </li>
+      ))
+    ) : (
+      <li className="leading-7">{emptyMessage}</li>
+    )}
+  </ul>
+);
+
+const d01ProfessionalNextSteps = [
+  '현재 입력내용을 기준으로는 학교폭력 해당 가능성이 있는 사안으로 보입니다.',
+  '신고 전후로 사실관계와 증거자료를 시간순으로 정리하는 것이 중요합니다.',
+  '피해 내용, 발생 일시, 장소, 관련학생, 목격자, 증거자료를 구체적으로 정리해 주세요.',
+  '필요한 경우 학교 상담, 보호조치 요청, 전문가 상담을 함께 검토하시기 바랍니다.',
+];
+
+const d01ExpertOpinion = [
+  '현재 입력내용을 종합하면 학교폭력에 해당할 가능성이 있는 사안입니다.',
+  '다만 최종 판단은 학교 조사, 학생 진술, 목격학생 진술, 증거자료, 피해 정도, 반복성, 고의성 등을 종합하여 결정됩니다.',
+  '따라서 신고 또는 심의 전에는 사실관계와 증거자료를 정리하고, 필요한 경우 전문가 상담을 통해 대응 방향을 점검하는 것이 좋습니다.',
+];
 
 export default function DiagnosisResultPage({ params }: { params: { id: string } }) {
   const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
@@ -280,44 +332,74 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
             <>
               <section>
                 <h2 className="mb-2 font-bold">입력내용</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.inputContent ?? diagnosis.content}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">진단결과</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-lg font-black print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.diagnosisResult}
-                </p>
+                <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  <dl className="grid gap-3 sm:grid-cols-[10rem_1fr]">
+                    <dt className="font-bold">학교폭력 유형/입력 항목</dt>
+                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputContent ?? diagnosis.content}</dd>
+                    <dt className="font-bold">사실관계 요약</dt>
+                    <dd className="whitespace-pre-wrap">
+                      {diagnosis.resultSections.factSummary || '입력된 사실관계 요약이 없습니다.'}
+                    </dd>
+                  </dl>
+                </div>
               </section>
 
               <section>
                 <h2 className="mb-2 font-bold">판단근거</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.grounds}
-                </p>
+                {renderNumberedItems(
+                  splitResultLines(diagnosis.resultSections.grounds).length
+                    ? splitResultLines(diagnosis.resultSections.grounds)
+                    : diagnosis.resultSections.reasoningPoints ?? [],
+                  '저장된 판단근거가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 text-lg font-black">진단결과</h2>
+                <div className="rounded-xl border border-slate-300 bg-white p-5 shadow-sm print:shadow-none">
+                  <p className="mb-2 text-sm font-bold text-slate-600">학교폭력 해당성 1차 진단</p>
+                  <p className="whitespace-pre-wrap text-xl font-black text-slate-950">
+                    {diagnosis.resultSections.diagnosisResult}
+                  </p>
+                </div>
               </section>
 
               <section>
                 <h2 className="mb-2 font-bold">추가로 확인할 사항</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.additionalChecks}
-                </p>
+                {renderNumberedItems(
+                  splitResultLines(diagnosis.resultSections.additionalChecks),
+                  '저장된 추가 확인사항이 없습니다.'
+                )}
               </section>
 
               <section>
                 <h2 className="mb-2 font-bold">준비할 증거자료</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.evidenceMaterials}
-                </p>
+                {renderChecklistItems(
+                  splitResultLines(diagnosis.resultSections.evidenceMaterials),
+                  '저장된 증거자료 목록이 없습니다.'
+                )}
               </section>
 
               <section>
                 <h2 className="mb-2 font-bold">다음 대응방향</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.nextSteps}
-                </p>
+                <div className="space-y-2 rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {d01ProfessionalNextSteps.map((step) => (
+                    <p key={step} className="leading-7">
+                      {step}
+                    </p>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">전문가 의견</h2>
+                <div className="space-y-2 rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {d01ExpertOpinion.map((opinion) => (
+                    <p key={opinion} className="leading-7">
+                      {opinion}
+                    </p>
+                  ))}
+                </div>
               </section>
 
               <section>
