@@ -17,13 +17,19 @@ type DiagnosisResult = {
     d05RiskV2?: boolean;
     measureScoreV2?: boolean;
     inputDetails?: {
-      severity: string;
-      persistence: string;
-      intentionality: string;
-      remorse: string;
-      reconciliation: string;
+      severity?: string;
+      persistence?: string;
+      intentionality?: string;
+      remorse?: string;
+      reconciliation?: string;
       caseSummary?: string;
-      incidentContent: string;
+      incidentContent?: string;
+      diagnosisStatus?: string;
+      propertyDamageStatus?: string;
+      continuityStatus?: string;
+      retaliationStatus?: string;
+      committeeIntent?: string;
+      factSummary?: string;
     };
     reasoningPoints?: string[];
     inputContent?: string;
@@ -38,6 +44,7 @@ type DiagnosisResult = {
     legalRequirements?: string;
     relationshipRecovery?: string;
     riskFactors?: string;
+    expertOpinion?: string;
     schoolRecordPossibility?: string;
     admissionImpactPossibility?: string;
     factorAnalysis?: string;
@@ -412,52 +419,59 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
           ) : diagnosis.resultSections?.principalResolutionV2 ? (
             <>
               <section>
-                <h2 className="mb-2 font-bold">입력내용 요약</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.inputSummary}
-                </p>
+                <h2 className="mb-2 font-bold">입력내용</h2>
+                <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  <dl className="grid gap-3 sm:grid-cols-[14rem_1fr]">
+                    <dt className="font-bold">2주 이상 진단서 여부</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.diagnosisStatus ?? '-'}</dd>
+                    <dt className="font-bold">재산피해 여부</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.propertyDamageStatus ?? '-'}</dd>
+                    <dt className="font-bold">지속성 여부</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.continuityStatus ?? '-'}</dd>
+                    <dt className="font-bold">보복행위 여부</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.retaliationStatus ?? '-'}</dd>
+                    <dt className="font-bold">피해학생 측 심의위원회 개최 희망 여부</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.committeeIntent ?? '-'}</dd>
+                    <dt className="font-bold">사실관계 요약</dt>
+                    <dd className="whitespace-pre-wrap">
+                      {diagnosis.resultSections.inputDetails?.factSummary || '입력된 사실관계 요약이 없습니다.'}
+                    </dd>
+                  </dl>
+                </div>
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">학교장 자체해결 가능성</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.possibility}
-                </p>
+                <h2 className="mb-2 font-bold">판단근거</h2>
+                {renderNumberedItems(
+                  diagnosis.resultSections.reasoningPoints ?? [],
+                  '저장된 판단근거가 없습니다.'
+                )}
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">법정요건 충족 여부</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.legalRequirements}
-                </p>
+                <h2 className="mb-2 text-lg font-black">진단결과</h2>
+                <div className="rounded-xl border border-slate-300 bg-white p-5 shadow-sm print:shadow-none">
+                  <p className="mb-2 text-sm font-bold text-slate-600">학교장 자체해결 가능성 1차 진단</p>
+                  <p className="whitespace-pre-wrap text-xl font-black text-slate-950">
+                    {diagnosis.resultSections.possibility}
+                  </p>
+                </div>
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">관계회복 가능성</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.relationshipRecovery}
-                </p>
+                <h2 className="mb-2 font-bold">추가로 확인할 사항</h2>
+                {renderNumberedItems(
+                  splitResultLines(diagnosis.resultSections.additionalChecks),
+                  '저장된 추가 확인사항이 없습니다.'
+                )}
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">심의 전 위험요소</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.riskFactors}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">추가 확인사항</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.additionalChecks}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">주의사항</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.caution}
-                </p>
+                <h2 className="mb-2 font-bold">준비할 자료</h2>
+                {renderChecklistItems(
+                  splitResultLines(diagnosis.resultSections.preparationDocuments),
+                  '저장된 준비자료 목록이 없습니다.'
+                )}
               </section>
 
               <section>
@@ -468,9 +482,16 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">준비자료</h2>
+                <h2 className="mb-2 font-bold">전문가 의견</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.preparationDocuments}
+                  {diagnosis.resultSections.expertOpinion}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">주의사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.caution}
                 </p>
               </section>
             </>

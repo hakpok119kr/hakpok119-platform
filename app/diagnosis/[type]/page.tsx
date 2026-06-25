@@ -171,6 +171,8 @@ type SchoolViolenceEligibilityResultSections = {
   diagnosisType: string;
   schoolViolenceEligibilityV2: true;
   inputContent: string;
+  factSummary: string;
+  reasoningPoints: string[];
   diagnosisResult: SchoolViolenceEligibilityGrade;
   grounds: string;
   additionalChecks: string;
@@ -181,6 +183,7 @@ type SchoolViolenceEligibilityResultSections = {
 
 type PrincipalResolutionOptions = {
   incidentContent: string;
+  factSummary: string;
   incidentDateOrPeriod: string;
   incidentPlace: string;
   studentRelationship: string;
@@ -207,12 +210,22 @@ type PrincipalResolutionOptions = {
 type PrincipalResolutionResultSections = {
   diagnosisType: string;
   principalResolutionV2: true;
+  inputDetails: {
+    diagnosisStatus: string;
+    propertyDamageStatus: string;
+    continuityStatus: string;
+    retaliationStatus: string;
+    committeeIntent: string;
+    factSummary: string;
+  };
   inputSummary: string;
+  reasoningPoints: string[];
   possibility: string;
   legalRequirements: string;
   relationshipRecovery: string;
   riskFactors: string;
   additionalChecks: string;
+  expertOpinion: string;
   caution: string;
   nextSteps: string;
   preparationDocuments: string;
@@ -776,23 +789,34 @@ const principalRiskOptions = [
 ];
 
 const principalPreparationDocuments = [
-  '사건 발생일시 및 장소 정리',
-  '관련 학생 관계 정리',
-  '피해 내용 및 피해회복 여부',
-  '진단서 제출 여부 확인',
-  '재산피해 복구 또는 복구 약속 자료',
-  '사과문, 반성문, 재발방지 약속',
-  '카카오톡, 문자, 사진, 녹음, CCTV 등 증거자료',
-  '피해학생 및 보호자 의사 확인 내용',
+  '진단서 또는 진료확인서',
+  '재산피해 내역 및 복구 확인자료',
+  '사과문 또는 화해 확인자료',
+  '피해학생 및 보호자 의사 확인자료',
   '담임교사 또는 상담교사 상담 기록',
+  '사건 경위 메모',
+  '문자, 카카오톡, 사진, 녹음 등 관련 증거자료',
 ];
 
 const principalCautions = [
-  '학교장 자체해결은 피해학생 및 보호자가 심의위원회 개최를 원하지 않고, 법정요건을 모두 충족하는 경우에만 가능합니다.',
-  '사과, 반성, 화해가 있더라도 2주 이상 진단서, 지속성, 보복행위, 피해학생 측 심의 개최 의사 등이 있으면 자체해결이 어려울 수 있습니다.',
-  '전담기구 심의 전 진단서 제출 여부, 재산피해 복구 여부, 피해학생 측 의사를 반드시 확인해야 합니다.',
-  '본 결과는 입력내용 기준의 1차 검토자료이며, 실제 판단은 학교 전담기구 및 교육지원청 절차에 따라 달라질 수 있습니다.',
+  '본 결과는 입력내용을 기준으로 한 1차 참고자료이며, 법적 확정판단은 아닙니다.',
+  '학교장 자체해결 여부는 학교의 사안조사 결과, 피해학생 측 의사, 전담기구 판단, 관련 법령과 지침에 따라 달라질 수 있습니다.',
 ];
+
+const principalAdditionalChecks = [
+  '피해학생 측에서 2주 이상의 치료를 요하는 진단서를 제출했는지 확인해 주세요.',
+  '재산상 피해가 있는 경우 즉시 복구되었는지 확인해 주세요.',
+  '행위가 일회성인지, 반복·지속된 사안인지 확인해 주세요.',
+  '신고 이후 보복행위 또는 2차 가해로 볼 사정이 있는지 확인해 주세요.',
+  '피해학생 및 보호자가 심의위원회 개최를 원하는지 명확히 확인해 주세요.',
+  '학교장 자체해결은 요건을 모두 충족해야 가능하므로 하나라도 충족하지 못하면 심의로 넘어갈 수 있습니다.',
+];
+
+const principalNextSteps =
+  '현재 입력내용을 기준으로 학교장 자체해결 가능성을 검토할 수 있습니다.\n다만 자체해결은 모든 요건을 충족해야 가능하므로, 진단서 제출 여부, 재산피해 회복 여부, 지속성, 보복행위 여부, 피해학생 측 의사를 정확히 확인해야 합니다.\n요건이 명확하지 않거나 피해학생 측이 심의위원회 개최를 원하는 경우에는 학교폭력대책심의위원회 절차를 준비하는 것이 필요합니다.';
+
+const principalExpertOpinion =
+  '학교장 자체해결은 단순히 경미한 사안이라는 이유만으로 결정되는 것이 아니라, 법령과 지침상 요건을 모두 충족하는지에 따라 판단됩니다.\n특히 2주 이상의 진단서, 지속성, 보복행위, 피해학생 측 심의위원회 개최 의사는 자체해결 여부에 큰 영향을 미칩니다.\n따라서 학교와 협의하기 전 사실관계와 증빙자료를 정리하고, 필요한 경우 전문가 상담을 통해 자체해결 가능성과 심의 대비 여부를 함께 검토하는 것이 좋습니다.';
 
 const getYesNoLabel = (value: boolean) => (value ? '있음' : '없음');
 
@@ -889,15 +913,33 @@ const calculatePrincipalResolutionResult = (
     `피해학생 및 보호자 심의 개최 의사: ${options.committeeIntent === 'not-wanted' ? '충족' : options.committeeIntent === 'wanted' ? '미충족' : '확인 필요'} (${getPrincipalLabel(options.committeeIntent)})`,
   ].join('\n');
 
-  const additionalChecks = [
-    ...unknownReasons,
-    !options.diagnosisSubmitted ? '진단서 제출 여부' : '',
-    !options.victimNeedsChecked ? '피해학생 측 요구사항 및 의사' : '',
-    options.propertyDamageStatus === 'restored' || options.propertyDamageStatus === 'promised'
-      ? '재산피해 복구 또는 복구 약속 자료'
-      : '',
-    !options.counselingRecord ? '담임 또는 상담교사 상담 기록' : '',
-  ].filter(Boolean);
+  const reasoningPoints = [
+    options.diagnosisStatus === 'issued'
+      ? '2주 이상의 치료를 요하는 진단서가 있는 경우 학교장 자체해결이 어려울 수 있습니다.'
+      : options.diagnosisStatus === 'none'
+        ? '2주 이상의 치료를 요하는 진단서가 확인되지 않아 자체해결 가능성을 높이는 요소로 볼 수 있습니다.'
+        : '2주 이상의 치료를 요하는 진단서 제출 여부가 명확하지 않아 추가 확인이 필요합니다.',
+    options.propertyDamageStatus === 'unrestored'
+      ? '재산상 피해가 회복되지 않은 경우 자체해결 판단에 불리하게 작용할 수 있습니다.'
+      : ['none', 'restored', 'promised'].includes(options.propertyDamageStatus)
+        ? '재산상 피해가 없거나 즉시 복구된 경우 자체해결 가능성을 높이는 요소가 됩니다.'
+        : '재산상 피해가 있는지, 있다면 즉시 복구되었는지 추가 확인이 필요합니다.',
+    options.continuityStatus === 'repeated'
+      ? '행위가 반복·지속된 경우 자체해결이 어려울 수 있습니다.'
+      : options.continuityStatus === 'once' || options.continuityStatus === 'two-three'
+        ? '사안이 지속적이지 않은 경우 자체해결 가능성이 있습니다.'
+        : '행위가 일회성인지 반복·지속된 사안인지 추가 확인이 필요합니다.',
+    options.retaliationStatus === 'confirmed' || options.retaliationStatus === 'suspected'
+      ? '보복행위에 해당할 가능성이 있으면 자체해결이 어려울 수 있습니다.'
+      : options.retaliationStatus === 'none'
+        ? '보복행위로 보기 어려운 경우 자체해결 검토가 가능합니다.'
+        : '보복행위 또는 2차 가해로 볼 사정이 있는지 추가 확인이 필요합니다.',
+    options.committeeIntent === 'wanted'
+      ? '피해학생 또는 보호자가 심의위원회 개최를 원하는 경우 자체해결은 어렵습니다.'
+      : options.committeeIntent === 'not-wanted'
+        ? '피해학생 및 보호자가 심의위원회 개최를 원하지 않는 경우 자체해결 요건 검토가 가능합니다.'
+        : '피해학생 및 보호자가 심의위원회 개최를 원하는지 명확히 확인해야 합니다.',
+  ];
 
   const inputSummary = [
     `사건 내용: ${options.incidentContent}`,
@@ -905,6 +947,12 @@ const calculatePrincipalResolutionResult = (
     `발생 장소: ${options.incidentPlace || '미입력'}`,
     `관련 학생 관계: ${options.studentRelationship || '미입력'}`,
     `폭력 유형: ${joinLines(options.violenceTypes, '선택 없음')}`,
+    `2주 이상 진단서 여부: ${getPrincipalLabel(options.diagnosisStatus)}`,
+    `재산피해 여부: ${getPrincipalLabel(options.propertyDamageStatus)}`,
+    `지속성 여부: ${getPrincipalLabel(options.continuityStatus)}`,
+    `보복행위 여부: ${getPrincipalLabel(options.retaliationStatus)}`,
+    `피해학생 측 심의위원회 개최 희망 여부: ${getPrincipalLabel(options.committeeIntent)}`,
+    `사실관계 요약: ${options.factSummary.trim() || '입력된 사실관계 요약이 없습니다.'}`,
     `진단서 제출 여부: ${getYesNoLabel(options.diagnosisSubmitted)}`,
     `증거자료 여부: ${getYesNoLabel(options.evidenceAvailable)}`,
     `목격자 진술 여부: ${getYesNoLabel(options.witnessStatement)}`,
@@ -912,20 +960,19 @@ const calculatePrincipalResolutionResult = (
     `피해학생 측 요구사항 확인 여부: ${getYesNoLabel(options.victimNeedsChecked)}`,
   ].join('\n');
 
-  const nextSteps = [
-    blockerReasons.length > 0
-      ? `자체해결을 어렵게 하는 사유를 우선 정리하세요: ${blockerReasons.join(', ')}.`
-      : '법정요건 5개를 전담기구 심의 전 자료로 확인하세요.',
-    riskCount >= 2
-      ? '심의 위험 요소가 있으므로 사건 경위, 피해 정도, 공개성, 반복성, 증거자료를 시간순으로 정리하세요.'
-      : '피해학생 및 보호자의 의사를 명확히 확인하고, 관계회복 자료를 준비하세요.',
-    '상담예약을 통해 실제 절차 진행 전 자료 누락 여부를 점검하세요.',
-  ].join('\n');
-
   return {
     diagnosisType: '학교장 자체해결 V2',
     principalResolutionV2: true,
+    inputDetails: {
+      diagnosisStatus: getPrincipalLabel(options.diagnosisStatus),
+      propertyDamageStatus: getPrincipalLabel(options.propertyDamageStatus),
+      continuityStatus: getPrincipalLabel(options.continuityStatus),
+      retaliationStatus: getPrincipalLabel(options.retaliationStatus),
+      committeeIntent: getPrincipalLabel(options.committeeIntent),
+      factSummary: options.factSummary.trim(),
+    },
     inputSummary,
+    reasoningPoints,
     possibility: `${possibility}\n분류: ${classification}${
       blockerReasons.length > 0 ? `\n주요 사유: ${blockerReasons.join(', ')}` : ''
     }${riskCount > 0 ? `\n심의 위험 요소 ${riskCount}개가 확인되어 자체해결 가능성이 낮아질 수 있습니다.` : ''}`,
@@ -935,9 +982,10 @@ const calculatePrincipalResolutionResult = (
         ? `${recoveryItems.join(', ')} 요소가 있어 관계회복 가능성은 검토할 수 있습니다.\n다만 관계회복 요소는 법정요건을 대체할 수 없습니다.`
         : '관계회복 요소가 충분히 확인되지 않았습니다. 사과, 반성, 화해, 피해회복, 재발방지 약속 가능성을 추가로 확인하세요.\n다만 관계회복 요소는 법정요건을 대체할 수 없습니다.',
     riskFactors: joinLines(options.riskFactors, '선택된 심의 위험 요소가 없습니다.'),
-    additionalChecks: joinLines(additionalChecks, '현재 입력 기준으로 즉시 추가 확인이 필요한 항목은 제한적입니다.'),
+    additionalChecks: principalAdditionalChecks.join('\n'),
+    expertOpinion: principalExpertOpinion,
     caution: principalCautions.join('\n'),
-    nextSteps,
+    nextSteps: principalNextSteps,
     preparationDocuments: principalPreparationDocuments.join('\n'),
   };
 };
@@ -1853,6 +1901,13 @@ const d01ContextKeywords = {
   intent: ['고의', '일부러', '반복', '지속', '계속', '집단', '여러 명', '여러명', '단체로', '보복'],
 };
 
+const d01ReasoningKeywords = {
+  physical: ['폭행', '상해', '때림', '맞음', '밀침', '발로', '주먹', '신체폭력', '다침', '상처', '멍', '통증'],
+  verbal: ['욕설', '모욕', '비하', '놀림', '별명', '협박', '명예훼손', '욕', '말로'],
+  cyber: ['단톡방', '단체방', 'sns', '카톡', '카카오톡', '메시지', '문자', 'dm', '온라인', '게시글', '유포', '사이버'],
+  bullying: ['따돌림', '왕따', '배제', '무시', '관계 단절', '놀림', '반복', '지속'],
+};
+
 const d01EvidenceMaterials = [
   '문자, 카카오톡, DM, 단체방 캡처',
   '사진, 동영상, 녹음파일',
@@ -1893,10 +1948,55 @@ const getMatchedD01Keywords = (content: string, keywords: string[]) =>
 const hasD01Keyword = (content: string, keywords: string[]) =>
   getMatchedD01Keywords(content, keywords).length > 0;
 
+const buildD01ReasoningPoints = (
+  normalizedContent: string,
+  compactContent: string,
+  hasHarm: boolean,
+  highRiskMatches: string[]
+) => {
+  const reasoningPoints: string[] = [];
+
+  if (
+    hasD01Keyword(normalizedContent, d01ReasoningKeywords.physical) ||
+    hasD01Keyword(compactContent, d01ReasoningKeywords.physical)
+  ) {
+    reasoningPoints.push('폭행 또는 신체적 피해 관련 내용이 확인되어 학교폭력 해당 가능성이 있습니다.');
+  }
+
+  if (
+    hasD01Keyword(normalizedContent, d01ReasoningKeywords.verbal) ||
+    hasD01Keyword(compactContent, d01ReasoningKeywords.verbal)
+  ) {
+    reasoningPoints.push('욕설, 모욕, 비하 표현 등 언어폭력 요소가 확인됩니다.');
+  }
+
+  if (
+    hasD01Keyword(normalizedContent, d01ReasoningKeywords.cyber) ||
+    hasD01Keyword(compactContent, d01ReasoningKeywords.cyber)
+  ) {
+    reasoningPoints.push('단톡방, SNS, 메시지 등 사이버폭력 요소가 확인됩니다.');
+  }
+
+  if (
+    hasD01Keyword(normalizedContent, d01ReasoningKeywords.bullying) ||
+    hasD01Keyword(compactContent, d01ReasoningKeywords.bullying)
+  ) {
+    reasoningPoints.push('반복적인 배제, 놀림, 관계 단절 등 따돌림 요소가 확인됩니다.');
+  }
+
+  if (!hasHarm || highRiskMatches.length === 0) {
+    reasoningPoints.push('입력내용만으로는 학교폭력 해당성을 단정하기 어려우므로 추가 사실확인이 필요합니다.');
+  }
+
+  return reasoningPoints;
+};
+
 const calculateSchoolViolenceEligibilityResult = (
-  content: string
+  content: string,
+  factSummary: string
 ): SchoolViolenceEligibilityResultSections => {
   const inputContent = content.trim();
+  const trimmedFactSummary = factSummary.trim();
   const normalized = inputContent.toLowerCase();
   const compact = normalized.replace(/\s/g, '');
   const highRiskMatches = getMatchedD01Keywords(normalized, d01HighRiskKeywords);
@@ -1949,6 +2049,7 @@ const calculateSchoolViolenceEligibilityResult = (
       ? `다만 해당 가능성을 낮출 수 있는 표현도 함께 확인됩니다: ${lowRiskMatches.join(', ')}.`
       : '단순 장난, 오해, 일회성 다툼, 사과·화해 여부는 별도로 확인하는 것이 좋습니다.',
   ];
+  const reasoningPoints = buildD01ReasoningPoints(normalized, compact, hasHarm, highRiskMatches);
 
   const additionalChecks = [
     '가해학생과 피해학생이 모두 학생인지 확인해 주세요.',
@@ -1963,6 +2064,8 @@ const calculateSchoolViolenceEligibilityResult = (
     diagnosisType: '학교폭력 해당성 진단',
     schoolViolenceEligibilityV2: true,
     inputContent,
+    factSummary: trimmedFactSummary,
+    reasoningPoints,
     diagnosisResult,
     grounds: grounds.join('\n'),
     additionalChecks: additionalChecks.join('\n'),
@@ -1987,6 +2090,7 @@ const buildResult = (type: string, content: string) => {
 
 export default function DiagnosisInputPage({ params }: { params: { type: string } }) {
   const [content, setContent] = useState('');
+  const [d01FactSummary, setD01FactSummary] = useState('');
   const [measureOptions, setMeasureOptions] = useState<MeasureOptions>({
     position: 'perpetrator',
     incidentContent: '',
@@ -2043,6 +2147,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
   const [principalResolutionOptions, setPrincipalResolutionOptions] =
     useState<PrincipalResolutionOptions>({
       incidentContent: '',
+      factSummary: '',
       incidentDateOrPeriod: '',
       incidentPlace: '',
       studentRelationship: '',
@@ -2145,7 +2250,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     const resultId = Date.now().toString();
     const storageKey = `${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`;
     const schoolViolenceEligibilityResult =
-      params.type === 'D01' ? calculateSchoolViolenceEligibilityResult(content) : null;
+      params.type === 'D01' ? calculateSchoolViolenceEligibilityResult(content, d01FactSummary) : null;
     const d05RiskResult = isD05Risk ? calculateD05RiskResult(measureOptions) : null;
     const measureResult = isD04Measure ? calculateMeasureScoreResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
@@ -2154,8 +2259,11 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
       : null;
     const result = schoolViolenceEligibilityResult
       ? [
+          `입력내용:\n${schoolViolenceEligibilityResult.inputContent}`,
+          `사실관계 요약:\n${schoolViolenceEligibilityResult.factSummary || '입력된 사실관계 요약이 없습니다.'}`,
+          `판단근거:\n${schoolViolenceEligibilityResult.reasoningPoints.join('\n')}`,
           `진단결과: ${schoolViolenceEligibilityResult.diagnosisResult}`,
-          `판단근거:\n${schoolViolenceEligibilityResult.grounds}`,
+          `세부 판단근거:\n${schoolViolenceEligibilityResult.grounds}`,
           `추가로 확인할 사항:\n${schoolViolenceEligibilityResult.additionalChecks}`,
           `준비할 증거자료:\n${schoolViolenceEligibilityResult.evidenceMaterials}`,
           `다음 대응방향:\n${schoolViolenceEligibilityResult.nextSteps}`,
@@ -2193,17 +2301,23 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         ].join('\n\n')
       : principalResolutionResult
       ? [
-          `학교장 자체해결 가능성: ${principalResolutionResult.possibility}`,
-          `법정요건 충족 여부:\n${principalResolutionResult.legalRequirements}`,
-          `관계회복 가능성:\n${principalResolutionResult.relationshipRecovery}`,
-          `심의 전 위험요소:\n${principalResolutionResult.riskFactors}`,
-          `추가 확인사항:\n${principalResolutionResult.additionalChecks}`,
-          `주의사항:\n${principalResolutionResult.caution}`,
+          `입력내용:\n${principalResolutionResult.inputSummary}`,
+          `판단근거:\n${principalResolutionResult.reasoningPoints.join('\n')}`,
+          `진단결과:\n${principalResolutionResult.possibility}`,
+          `추가로 확인할 사항:\n${principalResolutionResult.additionalChecks}`,
+          `준비할 자료:\n${principalResolutionResult.preparationDocuments}`,
           `다음 대응방향:\n${principalResolutionResult.nextSteps}`,
+          `전문가 의견:\n${principalResolutionResult.expertOpinion}`,
+          `주의사항:\n${principalResolutionResult.caution}`,
         ].join('\n\n')
       : buildResult(params.type, content);
     const savedContent = schoolViolenceEligibilityResult
-      ? schoolViolenceEligibilityResult.inputContent
+      ? [
+          schoolViolenceEligibilityResult.inputContent,
+          schoolViolenceEligibilityResult.factSummary
+            ? `사실관계 요약: ${schoolViolenceEligibilityResult.factSummary}`
+            : null,
+        ].filter(Boolean).join('\n\n')
       : adminAppealResult
       ? [
           `현재 입장: ${adminAppealResult.currentPosition}`,
@@ -2364,6 +2478,24 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
                 </label>
               ))}
             </div>
+          </section>
+
+          <section>
+            <label className="mb-2 block font-bold">사실관계 요약 (선택입력)</label>
+            <p className="mb-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+              ※ 사건의 발생경위, 피해 정도, 화해 여부, 피해학생 측 의사를 간략히 입력해 주세요.
+              {'\n'}※ 입력하지 않아도 진단은 가능합니다.
+              {'\n'}※ 입력한 내용은 진단 결과 및 PDF 보고서에 함께 표시됩니다.
+            </p>
+            <textarea
+              className="h-36 w-full rounded-xl border p-3"
+              placeholder={`예)
+• 피해학생이 2주 이상 진단서를 제출하지 않았습니다.
+• 재산피해는 없고, 가해학생이 사과했습니다.
+• 피해학생 측은 심의위원회 개최를 원하지 않는다고 했습니다.`}
+              value={principalResolutionOptions.factSummary}
+              onChange={(event) => updatePrincipalResolutionOption('factSummary', event.target.value)}
+            />
           </section>
         </div>
       ) : isAdminAppeal ? (
@@ -2748,6 +2880,33 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
                 </label>
               ))}
             </div>
+          </section>
+        </div>
+      ) : params.type === 'D01' ? (
+        <div className="space-y-5">
+          <textarea
+            className="h-60 w-full rounded-xl border p-3"
+            placeholder="사건 발생일, 장소, 관련 학생, 구체적인 내용, 증거자료를 입력해 주세요."
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
+
+          <section>
+            <label className="mb-2 block font-bold">사실관계 요약 (선택입력)</label>
+            <p className="mb-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+              ※ 사건의 발생경위, 장소, 행위내용, 피해내용을 간략히 입력해 주세요.
+              {'\n'}※ 입력하지 않아도 진단은 가능합니다.
+              {'\n'}※ 입력한 내용은 진단 결과 및 PDF 보고서에 함께 표시됩니다.
+            </p>
+            <textarea
+              className="h-36 w-full rounded-xl border p-3"
+              placeholder={`예)
+• 같은 반 학생이 지속적으로 욕설을 했습니다.
+• 쉬는 시간마다 별명을 부르며 놀렸습니다.
+• 단톡방에서 모욕적인 말을 했습니다.`}
+              value={d01FactSummary}
+              onChange={(event) => setD01FactSummary(event.target.value)}
+            />
           </section>
         </div>
       ) : (
