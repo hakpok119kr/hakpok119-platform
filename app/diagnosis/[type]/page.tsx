@@ -95,6 +95,7 @@ type MeasureResultSections = {
   measureScoreV2?: boolean;
   inputSummary: string;
   inputDetails?: D04InputDetails;
+  reasoningPoints?: string[];
   factorAnalysis: string;
   baseScore?: string;
   aggravatingItems?: string;
@@ -259,6 +260,44 @@ const d04ReadableLevelLabels: Record<MeasureScoreLevel, string> = {
   middle: '보통',
   low: '낮음',
   none: '없음',
+};
+
+const isHighMeasureLevel = (level: MeasureScoreLevel) => level === 'very-high' || level === 'high';
+
+const buildD04ReasoningPoints = (options: MeasureOptions) => {
+  const severityReason = isHighMeasureLevel(options.severityLevel)
+    ? '피해의 심각성이 높게 평가되어 조치수위 상승요소로 작용할 수 있습니다.'
+    : options.severityLevel === 'middle'
+      ? '피해의 심각성은 보통 수준으로 평가됩니다.'
+      : '피해의 심각성이 낮게 평가되어 중한 조치 가능성은 상대적으로 낮습니다.';
+  const persistenceReason = isHighMeasureLevel(options.persistenceLevel)
+    ? '행위가 반복적·지속적으로 이루어진 것으로 평가되어 불리한 요소가 될 수 있습니다.'
+    : options.persistenceLevel === 'middle'
+      ? '행위의 지속성은 보통 수준으로 평가됩니다.'
+      : '행위의 지속성이 낮아 일회성 사안으로 볼 여지가 있습니다.';
+  const intentionalityReason = isHighMeasureLevel(options.intentionalityLevel)
+    ? '고의성이 높게 평가되어 책임이 무겁게 판단될 수 있습니다.'
+    : options.intentionalityLevel === 'middle'
+      ? '고의성은 보통 수준으로 평가됩니다.'
+      : '고의성이 낮게 평가되어 감경요소로 고려될 수 있습니다.';
+  const remorseReason = isHighMeasureLevel(options.remorseLevel)
+    ? '반성 정도가 높게 확인되어 감경요소로 고려될 수 있습니다.'
+    : options.remorseLevel === 'middle'
+      ? '반성 정도는 보통 수준으로 평가됩니다.'
+      : '반성 정도가 낮아 조치수위 감경에는 한계가 있을 수 있습니다.';
+  const reconciliationReason = isHighMeasureLevel(options.reconciliationLevel)
+    ? '화해 또는 관계회복 가능성이 높아 감경요소로 고려될 수 있습니다.'
+    : options.reconciliationLevel === 'middle'
+      ? '화해 정도는 보통 수준으로 평가됩니다.'
+      : '화해가 충분히 이루어지지 않아 분쟁 지속 가능성이 있습니다.';
+
+  return [
+    severityReason,
+    persistenceReason,
+    intentionalityReason,
+    remorseReason,
+    reconciliationReason,
+  ];
 };
 
 const measurePositiveScoreMap: Record<MeasureScoreLevel, number> = {
@@ -1489,6 +1528,7 @@ const calculateMeasureScoreResult = (options: MeasureOptions): MeasureResultSect
       caseSummary: options.incidentContent.trim(),
       incidentContent: options.incidentContent.trim(),
     },
+    reasoningPoints: buildD04ReasoningPoints(options),
     factorAnalysis,
     baseScore: `${baseScore}점`,
     aggravatingItems: `${selectedAggravating}\n보정: +${aggravatingAdjustment}점`,

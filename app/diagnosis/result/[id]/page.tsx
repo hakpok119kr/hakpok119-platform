@@ -25,6 +25,7 @@ type DiagnosisResult = {
       caseSummary?: string;
       incidentContent: string;
     };
+    reasoningPoints?: string[];
     inputContent?: string;
     diagnosisResult?: string;
     riskLevel?: string;
@@ -125,6 +126,19 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                     </p>
                   </div>
                 </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">판단근거</h2>
+                <ol className="list-decimal space-y-2 rounded-xl bg-slate-100 p-4 pl-8 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.reasoningPoints?.length ? (
+                    diagnosis.resultSections.reasoningPoints.map((point) => (
+                      <li key={point}>{point}</li>
+                    ))
+                  ) : (
+                    <li>저장된 판단근거가 없습니다.</li>
+                  )}
+                </ol>
               </section>
 
               <section>
