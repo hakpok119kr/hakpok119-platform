@@ -15,6 +15,7 @@ type DiagnosisResult = {
     principalResolutionV2?: boolean;
     schoolViolenceEligibilityV2?: boolean;
     evidenceCapabilityV2?: boolean;
+    d06StudentRecordV2?: boolean;
     d05RiskV2?: boolean;
     measureScoreV2?: boolean;
     inputDetails?: {
@@ -43,6 +44,10 @@ type DiagnosisResult = {
       evidenceIssues?: string;
       proportionalityIssues?: string;
       urgency?: string;
+      selectedItems?: string;
+      expectedMeasure?: string;
+      schoolLevel?: string;
+      grade?: string;
     };
     reasoningPoints?: string[];
     appealGrounds?: string[];
@@ -61,6 +66,11 @@ type DiagnosisResult = {
     expertOpinion?: string;
     schoolRecordPossibility?: string;
     admissionImpactPossibility?: string;
+    recordRiskLevel?: string;
+    recordRiskDescription?: string;
+    recordImpactFactors?: string[];
+    deleteReviewNeed?: string;
+    deleteReviewDescription?: string;
     expectedMeasures?: string;
     studentRecordImpact?: string;
     recommendedMaterials?: string[];
@@ -284,6 +294,103 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
 
               <section>
                 <h2 className="mb-2 font-bold">유의사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.caution}
+                </p>
+              </section>
+            </>
+          ) : diagnosis.resultSections?.d06StudentRecordV2 ? (
+            <>
+              <section>
+                <h2 className="mb-2 font-bold">입력내용</h2>
+                <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  <dl className="grid gap-3 sm:grid-cols-[12rem_1fr]">
+                    <dt className="font-bold">사용자가 선택하거나 입력한 D06 항목</dt>
+                    <dd className="whitespace-pre-wrap">
+                      {diagnosis.resultSections.inputDetails?.selectedItems ||
+                        diagnosis.resultSections.inputContent ||
+                        diagnosis.content}
+                    </dd>
+                    <dt className="font-bold">받은 조치 또는 예상 조치</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.expectedMeasure ?? '-'}</dd>
+                    <dt className="font-bold">학교급</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.schoolLevel ?? '-'}</dd>
+                    <dt className="font-bold">학년</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.grade ?? '-'}</dd>
+                    <dt className="font-bold">사실관계 요약</dt>
+                    <dd className="whitespace-pre-wrap">
+                      {diagnosis.resultSections.factSummary ||
+                        diagnosis.resultSections.inputDetails?.factSummary ||
+                        '입력된 사실관계 요약이 없습니다.'}
+                    </dd>
+                  </dl>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">판단근거</h2>
+                {renderNumberedItems(
+                  diagnosis.resultSections.reasoningPoints ?? [],
+                  '저장된 판단근거가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">생활기록부 기재 가능성</h2>
+                <div className="rounded-xl border border-slate-300 bg-white p-5 shadow-sm print:shadow-none">
+                  <p className="text-2xl font-black text-slate-950">
+                    {diagnosis.resultSections.recordRiskLevel ?? '-'}
+                  </p>
+                  <p className="mt-3 whitespace-pre-wrap leading-7">
+                    {diagnosis.resultSections.recordRiskDescription}
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">기재 영향 요소</h2>
+                {renderNumberedItems(
+                  diagnosis.resultSections.recordImpactFactors ?? [],
+                  '저장된 기재 영향 요소가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">삭제심의 검토 필요성</h2>
+                <div className="rounded-xl border border-slate-300 bg-white p-5 shadow-sm print:shadow-none">
+                  <p className="text-2xl font-black text-slate-950">
+                    {diagnosis.resultSections.deleteReviewNeed ?? '-'}
+                  </p>
+                  <p className="mt-3 whitespace-pre-wrap leading-7">
+                    {diagnosis.resultSections.deleteReviewDescription}
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">보완자료</h2>
+                {renderChecklistItems(
+                  diagnosis.resultSections.recommendedMaterials ?? [],
+                  '저장된 보완자료가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">다음 대응방향</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.nextActions ?? diagnosis.resultSections.nextSteps}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">전문가 의견</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.expertOpinion}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">주의사항</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
                   {diagnosis.resultSections.caution}
                 </p>

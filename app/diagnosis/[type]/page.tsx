@@ -236,6 +236,34 @@ type EvidenceCapabilityResultSections = {
   nextSteps: string;
 };
 
+type D06RecordRiskLevel = '낮음' | '보통' | '높음' | '매우 높음';
+
+type D06StudentRecordResultSections = {
+  diagnosisType: string;
+  d06StudentRecordV2: true;
+  inputContent: string;
+  factSummary: string;
+  inputDetails: {
+    selectedItems: string;
+    expectedMeasure: string;
+    schoolLevel: string;
+    grade: string;
+    factSummary: string;
+  };
+  inputSummary: string;
+  reasoningPoints: string[];
+  recordRiskLevel: D06RecordRiskLevel;
+  recordRiskDescription: string;
+  recordImpactFactors: string[];
+  deleteReviewNeed: D06RecordRiskLevel;
+  deleteReviewDescription: string;
+  recommendedMaterials: string[];
+  nextActions: string;
+  expertOpinion: string;
+  caution: string;
+  nextSteps: string;
+};
+
 type PrincipalResolutionOptions = {
   incidentContent: string;
   factSummary: string;
@@ -2461,6 +2489,176 @@ const getMatchedD01Keywords = (content: string, keywords: string[]) =>
 const hasD01Keyword = (content: string, keywords: string[]) =>
   getMatchedD01Keywords(content, keywords).length > 0;
 
+const d06RecommendedMaterials = [
+  '학교폭력 조치결정 통보서',
+  '학교폭력대책심의위원회 결과통지서',
+  '생활기록부 기재 여부 확인자료',
+  '조치 이행 확인자료',
+  '반성문',
+  '사과 및 화해 노력 자료',
+  '피해회복 관련 자료',
+  '상담확인서',
+  '봉사활동 또는 특별교육 이수자료',
+  '담임교사 또는 학교 상담 기록',
+  '행정심판 관련 자료',
+  '집행정지 검토 자료',
+  '삭제심의 신청 관련 자료',
+];
+
+const d06NextActions = [
+  '현재 입력내용을 기준으로 생활기록부 기재 가능성과 삭제심의 필요성을 함께 검토해야 합니다.',
+  '특히 4호 이상 조치가 예상되거나 이미 결정된 경우 조치결정 통보서, 심의결과, 조치 이행자료, 반성·화해·피해회복 자료를 정리하는 것이 중요합니다.',
+  '생활기록부 기재로 인해 진학이나 학교생활에 불이익이 예상되는 경우에는 삭제심의, 행정심판, 집행정지 가능성도 함께 검토하는 것이 좋습니다.',
+].join('\n');
+
+const d06ExpertOpinion = [
+  '생활기록부 영향은 단순히 학교폭력 신고 여부만으로 결정되는 것이 아니라 최종 조치수위, 학교급, 학년, 조치 이행 여부, 삭제심의 가능성에 따라 달라질 수 있습니다.',
+  '특히 4호 이상 조치가 예상되거나 결정된 경우에는 생활기록부 기재 여부와 삭제 가능성, 행정심판 가능성을 함께 검토해야 합니다.',
+  '따라서 조치결정 통보를 받은 경우에는 기재 여부, 불복기간, 삭제심의 시기, 제출자료를 신속히 확인하는 것이 좋습니다.',
+].join('\n');
+
+const d06Caution = [
+  '본 결과는 입력내용을 기준으로 한 1차 참고자료이며, 법적 확정판단은 아닙니다.',
+  '생활기록부 기재 여부와 삭제심의 가능성은 최종 조치수위, 학교급, 관련 법령, 교육부 지침, 학교의 처리 절차에 따라 달라질 수 있습니다.',
+  '입시 영향은 대학별 반영 방식과 모집요강에 따라 달라질 수 있으므로 D07 대학입시 영향 진단에서 별도로 확인하는 것이 좋습니다.',
+].join('\n');
+
+const calculateD06StudentRecordResult = (
+  content: string,
+  factSummary: string
+): D06StudentRecordResultSections => {
+  const inputContent = content.trim();
+  const trimmedFactSummary = factSummary.trim();
+  const source = `${inputContent}\n${trimmedFactSummary}`.toLowerCase();
+  const compact = source.replace(/\s/g, '');
+  const includesMeasure = (numbers: number[]) =>
+    numbers.some((number) => compact.includes(`${number}호`));
+  const hasHighMeasure = includesMeasure([4, 5, 6, 7, 8, 9]) || includesAny(source, ['4호 이상', '사회봉사', '특별교육', '출석정지', '학급교체', '전학', '퇴학']);
+  const hasFiveOrMore = includesMeasure([5, 6, 7, 8, 9]) || includesAny(source, ['5호 이상', '특별교육', '출석정지', '학급교체', '전학', '퇴학']);
+  const hasEightOrNine = includesMeasure([8, 9]) || includesAny(source, ['전학', '퇴학']);
+  const hasLowMeasure = includesMeasure([1, 2, 3]) || includesAny(source, ['서면사과', '접촉금지', '보복행위 금지', '학교봉사']);
+  const isElementary = includesAny(source, ['초등학교', '초등학생', '초등']);
+  const isMiddle = includesAny(source, ['중학교', '중학생', '중등']);
+  const isHighSchool = includesAny(source, ['고등학교', '고등학생', '고1', '고2', '고3', '대입', '입시', '진학']);
+  const needsAppeal = includesAny(source, ['행정심판', '집행정지', '불복', '이의', '처분', '통보서']);
+  const needsDeleteReview = includesAny(source, ['삭제심의', '삭제', '졸업 전 삭제', '생기부 삭제']);
+  const admissionConcern = includesAny(source, ['대입', '입시', '진학', '고등학생', '고등학교']);
+
+  const recordRiskLevel: D06RecordRiskLevel = hasEightOrNine
+    ? '매우 높음'
+    : hasFiveOrMore
+      ? '높음'
+      : hasHighMeasure || (admissionConcern && needsDeleteReview)
+        ? '높음'
+        : hasLowMeasure
+          ? '낮음'
+          : '보통';
+
+  const recordRiskDescription = hasEightOrNine
+    ? '전학 또는 퇴학 수준의 조치가 예상되는 경우 생활기록부 및 진학 영향이 매우 클 수 있으므로 즉시 대응전략을 검토해야 합니다.'
+    : hasFiveOrMore
+      ? '5호 이상 조치는 생활기록부 기재와 향후 삭제심의, 진학 영향까지 함께 검토할 필요가 있습니다.'
+      : hasHighMeasure
+        ? '4호 이상 조치가 예상되거나 결정된 경우 생활기록부 기재 가능성을 신중히 검토해야 합니다.'
+        : '1호~3호 조치의 경우 생활기록부 기재 영향은 상대적으로 낮을 수 있으나, 구체적인 조치와 관련 지침 확인이 필요합니다.';
+
+  const deleteReviewNeed: D06RecordRiskLevel = hasEightOrNine || (hasFiveOrMore && needsAppeal)
+    ? '매우 높음'
+    : hasFiveOrMore || hasHighMeasure || needsDeleteReview
+      ? '높음'
+      : hasLowMeasure
+        ? '낮음'
+        : '보통';
+
+  const deleteReviewDescriptionMap: Record<D06RecordRiskLevel, string> = {
+    낮음: '현재 입력내용만으로는 삭제심의를 즉시 검토할 필요성은 크지 않아 보입니다.',
+    보통: '조치수위와 학교급에 따라 삭제심의 가능성을 확인할 필요가 있습니다.',
+    높음: '생활기록부 기재 가능성이 있는 조치라면 삭제심의 요건과 시기를 함께 검토해야 합니다.',
+    '매우 높음': '중한 조치가 예상되거나 결정된 경우 생활기록부 기재, 삭제심의, 행정심판 가능성을 함께 검토하는 것이 좋습니다.',
+  };
+
+  const recordImpactFactors = [
+    hasHighMeasure ? '4호 이상 조치 가능성' : null,
+    includesMeasure([5]) || source.includes('특별교육') ? '5호 특별교육 가능성' : null,
+    includesMeasure([6]) || source.includes('출석정지') ? '6호 출석정지 가능성' : null,
+    includesMeasure([7]) || source.includes('학급교체') ? '7호 학급교체 가능성' : null,
+    includesMeasure([8]) || source.includes('전학') ? '8호 전학 가능성' : null,
+    includesMeasure([9]) || source.includes('퇴학') ? '9호 퇴학 가능성' : null,
+    isHighSchool || admissionConcern ? '고등학생 또는 대입 예정 학생' : null,
+    includesAny(source, ['불복기간', '기간 경과', '통보']) ? '조치결정 이후 불복기간 경과 우려' : null,
+    needsDeleteReview ? '삭제심의 필요성' : null,
+    needsAppeal ? '행정심판 또는 집행정지 필요성' : null,
+  ].filter(Boolean) as string[];
+
+  if (recordImpactFactors.length === 0) {
+    recordImpactFactors.push('최종 조치수위와 학교급 확인 필요');
+  }
+
+  const reasoningPoints = [
+    hasLowMeasure && !hasHighMeasure
+      ? '입력내용에 1호~3호 수준 조치가 포함되어 생활기록부 기재 영향은 상대적으로 낮게 검토됩니다.'
+      : '입력내용을 기준으로 받은 조치 또는 예상 조치수위를 우선 검토했습니다.',
+    hasHighMeasure
+      ? '4호 이상 조치 가능성이 있어 생활기록부 기재 여부와 후속 대응 필요성이 커질 수 있습니다.'
+      : '4호 이상 조치 가능성은 명확하지 않으므로 조치결정 통보서와 심의결과 확인이 필요합니다.',
+    hasFiveOrMore
+      ? '5호 이상 조치 가능성이 있어 삭제심의와 진학 영향까지 함께 검토할 필요가 있습니다.'
+      : '5호 이상 중한 조치 여부는 현재 입력내용만으로 제한적으로 확인됩니다.',
+    isElementary || isMiddle || isHighSchool
+      ? `학교급은 ${isElementary ? '초등학교' : isMiddle ? '중학교' : '고등학교'}로 파악되어 학교급별 기재·삭제 기준 확인이 필요합니다.`
+      : '학교급과 학년 정보가 명확할수록 생활기록부 기재 및 삭제심의 판단 정확도가 높아집니다.',
+    needsAppeal
+      ? '행정심판 또는 집행정지 관련 표현이 있어 불복기간과 처분 집행 가능성을 함께 확인해야 합니다.'
+      : '조치결정 이후 불복 또는 집행정지 검토 필요성은 통보서 수령 여부에 따라 달라질 수 있습니다.',
+  ];
+
+  const expectedMeasure = hasEightOrNine
+    ? '8호 전학 또는 9호 퇴학 수준'
+    : hasFiveOrMore
+      ? '5호 이상 조치 가능성'
+      : hasHighMeasure
+        ? '4호 이상 조치 가능성'
+        : hasLowMeasure
+          ? '1호~3호 수준'
+          : '구체적인 조치수위 추가 확인 필요';
+  const schoolLevel = isElementary ? '초등학교' : isMiddle ? '중학교' : isHighSchool ? '고등학교' : '추가 확인 필요';
+  const gradeMatch = source.match(/([1-6])\s*학년|초\s*([1-6])|중\s*([1-3])|고\s*([1-3])/);
+  const grade = gradeMatch?.[0] ?? '추가 확인 필요';
+  const inputSummary = [
+    `선택/입력한 D06 항목: ${inputContent}`,
+    `받은 조치 또는 예상 조치: ${expectedMeasure}`,
+    `학교급: ${schoolLevel}`,
+    `학년: ${grade}`,
+    `사실관계 요약: ${trimmedFactSummary || '입력된 사실관계 요약이 없습니다.'}`,
+  ].join('\n');
+
+  return {
+    diagnosisType: '생활기록부 영향 진단',
+    d06StudentRecordV2: true,
+    inputContent,
+    factSummary: trimmedFactSummary,
+    inputDetails: {
+      selectedItems: inputContent,
+      expectedMeasure,
+      schoolLevel,
+      grade,
+      factSummary: trimmedFactSummary,
+    },
+    inputSummary,
+    reasoningPoints,
+    recordRiskLevel,
+    recordRiskDescription,
+    recordImpactFactors,
+    deleteReviewNeed,
+    deleteReviewDescription: deleteReviewDescriptionMap[deleteReviewNeed],
+    recommendedMaterials: d06RecommendedMaterials,
+    nextActions: d06NextActions,
+    expertOpinion: d06ExpertOpinion,
+    caution: d06Caution,
+    nextSteps: d06NextActions,
+  };
+};
+
 const buildD01ReasoningPoints = (
   normalizedContent: string,
   compactContent: string,
@@ -2606,6 +2804,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
   const [d01FactSummary, setD01FactSummary] = useState('');
   const [d03FactSummary, setD03FactSummary] = useState('');
   const [d05FactSummary, setD05FactSummary] = useState('');
+  const [d06FactSummary, setD06FactSummary] = useState('');
   const [measureOptions, setMeasureOptions] = useState<MeasureOptions>({
     position: 'perpetrator',
     incidentContent: '',
@@ -2769,6 +2968,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
       params.type === 'D01' ? calculateSchoolViolenceEligibilityResult(content, d01FactSummary) : null;
     const evidenceCapabilityResult =
       params.type === 'D03' ? calculateEvidenceCapabilityResult(content, d03FactSummary) : null;
+    const d06StudentRecordResult =
+      params.type === 'D06' ? calculateD06StudentRecordResult(content, d06FactSummary) : null;
     const d05RiskResult = isD05Risk ? calculateD05RiskReportResult(measureOptions, d05FactSummary) : null;
     const measureResult = isD04Measure ? calculateMeasureScoreResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
@@ -2849,6 +3050,18 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `전문가 의견:\n${evidenceCapabilityResult.expertOpinion}`,
           `주의사항:\n${evidenceCapabilityResult.caution}`,
         ].join('\n\n')
+      : d06StudentRecordResult
+      ? [
+          `입력내용:\n${d06StudentRecordResult.inputSummary}`,
+          `판단근거:\n${d06StudentRecordResult.reasoningPoints.join('\n')}`,
+          `생활기록부 기재 가능성: ${d06StudentRecordResult.recordRiskLevel}\n${d06StudentRecordResult.recordRiskDescription}`,
+          `기재 영향 요소:\n${d06StudentRecordResult.recordImpactFactors.join('\n')}`,
+          `삭제심의 검토 필요성: ${d06StudentRecordResult.deleteReviewNeed}\n${d06StudentRecordResult.deleteReviewDescription}`,
+          `보완자료:\n${d06StudentRecordResult.recommendedMaterials.join('\n')}`,
+          `다음 대응방향:\n${d06StudentRecordResult.nextActions}`,
+          `전문가 의견:\n${d06StudentRecordResult.expertOpinion}`,
+          `주의사항:\n${d06StudentRecordResult.caution}`,
+        ].join('\n\n')
       : buildResult(params.type, content);
     const savedContent = schoolViolenceEligibilityResult
       ? [
@@ -2872,6 +3085,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
               `선택/입력한 증거자료 종류: ${evidenceCapabilityResult.inputContent}`,
               `사실관계 요약: ${evidenceCapabilityResult.factSummary || '입력된 사실관계 요약이 없습니다.'}`,
             ].join('\n')
+        : d06StudentRecordResult
+          ? d06StudentRecordResult.inputSummary
         : content;
 
     sessionStorage.setItem(
@@ -2883,6 +3098,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
             ? schoolViolenceEligibilityResult.diagnosisType
             : evidenceCapabilityResult
               ? evidenceCapabilityResult.diagnosisType
+            : d06StudentRecordResult
+              ? d06StudentRecordResult.diagnosisType
             : d05RiskResult
               ? d05RiskResult.diagnosisType
             : measureResult
@@ -2898,7 +3115,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           d05RiskResult ??
           measureResult ??
           principalResolutionResult ??
-          evidenceCapabilityResult,
+          evidenceCapabilityResult ??
+          d06StudentRecordResult,
       })
     );
 
@@ -3521,6 +3739,33 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
 • 단톡방에서 모욕적인 말을 했습니다.`}
               value={d01FactSummary}
               onChange={(event) => setD01FactSummary(event.target.value)}
+            />
+          </section>
+        </div>
+      ) : params.type === 'D06' ? (
+        <div className="space-y-5">
+          <textarea
+            className="h-60 w-full rounded-xl border p-3"
+            placeholder="받은 조치 또는 예상 조치, 학교급, 학년, 생활기록부 기재 우려, 삭제심의 필요 여부를 입력해 주세요."
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
+
+          <section>
+            <label className="mb-2 block font-bold">사실관계 요약 (선택입력)</label>
+            <p className="mb-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+              {'※ 받은 조치, 학교급, 학년, 생활기록부 기재 우려, 삭제심의 필요 여부를 간략히 입력해 주세요.'}
+              {'\n※ 입력하지 않아도 진단은 가능합니다.'}
+              {'\n※ 입력한 내용은 진단 결과 및 PDF 보고서에 함께 표시됩니다.'}
+            </p>
+            <textarea
+              className="h-36 w-full rounded-xl border p-3"
+              placeholder={`예)
+• 중학교 2학년이고 4호 사회봉사 조치를 받을 가능성이 있습니다.
+• 5호 특별교육 조치를 받아 생활기록부 기재 여부가 걱정됩니다.
+• 고등학교 1학년이고 향후 대입에 영향이 있을지 확인하고 싶습니다.`}
+              value={d06FactSummary}
+              onChange={(event) => setD06FactSummary(event.target.value)}
             />
           </section>
         </div>
