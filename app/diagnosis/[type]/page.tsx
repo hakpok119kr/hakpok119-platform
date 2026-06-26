@@ -90,6 +90,14 @@ type D04InputDetails = {
   incidentContent: string;
 };
 
+type SharedMeasureLevel = 'none' | 'no-measure' | '1-3' | '4' | '5-6' | '7-9' | 'unknown';
+
+type SharedMeasureAssessment = {
+  level: SharedMeasureLevel;
+  label: string;
+  reasons: string[];
+};
+
 type MeasureResultSections = {
   diagnosisType: string;
   measureScoreV2?: boolean;
@@ -102,6 +110,7 @@ type MeasureResultSections = {
   mitigatingItems?: string;
   finalScore?: string;
   expectedMeasure: string;
+  sharedMeasureAssessment?: SharedMeasureAssessment;
   reasons: string;
   comprehensiveOpinion?: string;
   mitigatingFactors: string;
@@ -131,6 +140,7 @@ type D05RiskResultSections = {
   riskFactors: string[];
   mitigatingFactors: string[];
   expectedMeasures: string;
+  sharedMeasureAssessment?: SharedMeasureAssessment;
   studentRecordImpact: string;
   recommendedMaterials: string[];
   schoolRecordPossibility?: string;
@@ -252,6 +262,7 @@ type D06StudentRecordResultSections = {
   };
   inputSummary: string;
   reasoningPoints: string[];
+  sharedMeasureAssessment?: SharedMeasureAssessment;
   recordRiskLevel: D06RecordRiskLevel;
   recordRiskDescription: string;
   recordImpactFactors: string[];
@@ -265,6 +276,13 @@ type D06StudentRecordResultSections = {
 };
 
 type D07AdmissionImpactLevel = '낮음' | '보통' | '높음' | '매우 높음';
+
+const d07AdmissionImpactLevels: Record<'low' | 'normal' | 'high' | 'veryHigh', D07AdmissionImpactLevel> = {
+  low: '낮음',
+  normal: '보통',
+  high: '높음',
+  veryHigh: '매우 높음',
+};
 
 type D07AdmissionImpactResultSections = {
   diagnosisType: string;
@@ -281,6 +299,7 @@ type D07AdmissionImpactResultSections = {
   };
   inputSummary: string;
   reasoningPoints: string[];
+  sharedMeasureAssessment?: SharedMeasureAssessment;
   admissionImpactLevel: D07AdmissionImpactLevel;
   admissionImpactDescription: string;
   admissionImpactFactors: string[];
@@ -570,6 +589,108 @@ const urgencyOptions = [
 
 const includesAny = (content: string, keywords: string[]) =>
   keywords.some((keyword) => content.includes(keyword));
+
+const sharedMeasureLevelRank: Record<SharedMeasureLevel, number> = {
+  none: 0,
+  'no-measure': 1,
+  '1-3': 2,
+  '4': 3,
+  '5-6': 4,
+  '7-9': 5,
+  unknown: -1,
+};
+
+const sharedMeasureLabels: Record<SharedMeasureLevel, string> = {
+  none: '학교폭력 아님 가능성',
+  'no-measure': '조치없음 가능성',
+  '1-3': '1~3호 가능성',
+  '4': '4호 이상 조치 가능성',
+  '5-6': '5호 특별교육 또는 6호 출석정지 가능성',
+  '7-9': '7~9호 중대 조치 가능성',
+  unknown: '입력내용만으로 조치수위 특정 어려움',
+};
+
+const normalizeMeasureText = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/\s/g, '')
+    .replace(/[~∼～]/g, '-');
+
+const upgradeSharedMeasureAssessment = (
+  assessment: SharedMeasureAssessment,
+  minimumLevel: SharedMeasureLevel,
+  reason: string
+): SharedMeasureAssessment => {
+  if (
+    sharedMeasureLevelRank[assessment.level] < sharedMeasureLevelRank[minimumLevel] ||
+    assessment.level === 'unknown'
+  ) {
+    return {
+      level: minimumLevel,
+      label: sharedMeasureLabels[minimumLevel],
+      reasons: [...assessment.reasons, reason],
+    };
+  }
+
+  return {
+    ...assessment,
+    reasons: assessment.reasons.includes(reason) ? assessment.reasons : [...assessment.reasons, reason],
+  };
+};
+
+const inferSchoolViolenceMeasureLevel = (...values: Array<string | undefined | null>): SharedMeasureAssessment => {
+  const source = normalizeMeasureText(values.filter(Boolean).join('\n'));
+  const reasons: string[] = [];
+  let level: SharedMeasureLevel = 'unknown';
+
+  const setLevel = (nextLevel: SharedMeasureLevel, reason: string) => {
+    if (sharedMeasureLevelRank[nextLevel] > sharedMeasureLevelRank[level] || level === 'unknown') {
+      level = nextLevel;
+    }
+    if (!reasons.includes(reason)) reasons.push(reason);
+  };
+  const hasAnyText = (keywords: string[]) =>
+    keywords.some((keyword) => source.includes(normalizeMeasureText(keyword)));
+  const highSignals = [
+    hasAnyText(['2주이상진단', '2주이상치료', '진료확인서', '병원진료', '치료확인서']) ? '2주 이상 진단서 또는 병원 진료 정황' : null,
+    hasAnyText(['위클래스상담', '상담확인서', '불안', '우울', '등교거부']) ? '상담 또는 심리적 피해 정황' : null,
+    hasAnyText(['3주반복', '3주이상반복', '반복괴롭힘', '지속적괴롭힘', '여러차례']) ? '반복성 또는 지속성 정황' : null,
+    hasAnyText(['다수가해', '집단괴롭힘', '집단행위', '같은반학생3명']) ? '다수 또는 집단 가해 정황' : null,
+    hasAnyText(['단체카카오톡방', '단체카톡방', '카카오톡', '카톡', 'sns', '사이버폭력', '사진유포', '조롱글', '따돌림유도']) ? '사이버폭력 또는 유포 정황' : null,
+    hasAnyText(['보복행위', '행정심판', '집행정지']) ? '불복 또는 보복 관련 정황' : null,
+    hasAnyText(['심의위원회개최', '심의개최', '위원회개최요청']) ? '학교폭력대책심의위원회 개최 정황' : null,
+  ].filter(Boolean) as string[];
+
+  if (hasAnyText(['학교폭력아님', '해당없음', '학폭아님'])) {
+    setLevel('none', '학교폭력 아님 또는 해당 없음 표현이 확인되었습니다.');
+  }
+  if (hasAnyText(['조치없음', '처분없음'])) {
+    setLevel('no-measure', '조치없음 표현이 확인되었습니다.');
+  }
+  if (hasAnyText(['1호', '서면사과', '2호', '접촉금지', '3호', '교내봉사'])) {
+    setLevel('1-3', '1~3호 조치 표현이 확인되었습니다.');
+  }
+  if (hasAnyText(['4호', '사회봉사', '4호이상', '4호이상가능성'])) {
+    setLevel('4', '4호 이상 조치 가능성 표현이 확인되었습니다.');
+  }
+  if (hasAnyText(['5호', '6호', '5호이상', '특별교육', '출석정지', '5호또는6호', '5호특별교육', '6호출석정지'])) {
+    setLevel('5-6', '5호 특별교육 또는 6호 출석정지 가능성 표현이 확인되었습니다.');
+  }
+  if (hasAnyText(['7호', '8호', '9호', '학급교체', '전학', '퇴학'])) {
+    setLevel('7-9', '7~9호 중대 조치 표현이 확인되었습니다.');
+  }
+  if (highSignals.length >= 4) {
+    setLevel('5-6', `${highSignals.join(', ')}이 함께 확인되어 5~6호 가능성을 검토해야 합니다.`);
+  } else if (highSignals.length >= 2) {
+    setLevel('4', `${highSignals.join(', ')}이 함께 확인되어 4호 이상 가능성을 검토해야 합니다.`);
+  }
+
+  return {
+    level,
+    label: sharedMeasureLabels[level],
+    reasons: reasons.length ? reasons : ['조치수위 추정에 필요한 직접 표현 또는 고위험 정황이 제한적으로 확인되었습니다.'],
+  };
+};
 
 const analyzeContent = (content: string): ContentAnalysis => {
   const normalized = content.replace(/\s/g, '').toLowerCase();
@@ -1807,6 +1928,15 @@ const calculateMeasureScoreResult = (options: MeasureOptions): MeasureResultSect
     `화해정도: ${labelOf(options.reconciliationLevel)} (${reconciliationScore}점, 감경요소 역산)`,
   ].join('\n');
 
+  const sharedMeasureAssessment = inferSchoolViolenceMeasureLevel(
+    options.incidentContent,
+    measureResult.expectedMeasure,
+    measureResult.description,
+    selectedAggravating,
+    selectedMitigating,
+    reasons.join('\n')
+  );
+
   return {
     diagnosisType: '조치수위 예측',
     measureScoreV2: true,
@@ -1827,6 +1957,7 @@ const calculateMeasureScoreResult = (options: MeasureOptions): MeasureResultSect
     mitigatingItems: `${selectedMitigating}\n보정: ${mitigatingAdjustment}점`,
     finalScore: `${finalScore}점`,
     expectedMeasure: measureResult.expectedMeasure,
+    sharedMeasureAssessment,
     reasons: reasons.join('\n'),
     comprehensiveOpinion: measureResult.description,
     mitigatingFactors: selectedMitigating,
@@ -2197,6 +2328,27 @@ const calculateD05RiskReportResult = (
     '따라서 현재 사안에서는 위험요인과 감경요인을 함께 정리하여 심의 전 제출자료와 진술 방향을 준비하는 것이 좋습니다.',
   ].join('\n');
 
+  let sharedMeasureAssessment = inferSchoolViolenceMeasureLevel(
+    incidentContent,
+    trimmedFactSummary,
+    expectedMeasuresByLevel[riskLevel],
+    diagnosisResult,
+    reasoningPoints.join('\n')
+  );
+  if (totalScore >= 17 || options.sexualIssue || options.weaponUse) {
+    sharedMeasureAssessment = upgradeSharedMeasureAssessment(
+      sharedMeasureAssessment,
+      '5-6',
+      'D05 4호 이상 위험도가 매우 높음으로 산정되어 최소 5~6호 가능성을 함께 검토해야 합니다.'
+    );
+  } else if (totalScore >= 10 || riskFactors.length > 0) {
+    sharedMeasureAssessment = upgradeSharedMeasureAssessment(
+      sharedMeasureAssessment,
+      '4',
+      'D05 4호 이상 위험도가 높음 이상으로 산정되어 최소 4호 이상 가능성을 함께 검토해야 합니다.'
+    );
+  }
+
   return {
     diagnosisType: '4호 이상 위험도 진단',
     d05RiskV2: true,
@@ -2212,6 +2364,7 @@ const calculateD05RiskReportResult = (
     riskFactors,
     mitigatingFactors,
     expectedMeasures: `${expectedMeasuresByLevel[riskLevel]}\n\n실제 최종 조치는 학교폭력대책심의위원회 판단에 따라 달라질 수 있습니다.`,
+    sharedMeasureAssessment,
     studentRecordImpact: studentRecordImpactByLevel[riskLevel],
     recommendedMaterials,
     schoolRecordPossibility: studentRecordImpactByLevel[riskLevel],
@@ -2660,6 +2813,33 @@ const calculateD06StudentRecordResult = (
     `사실관계 요약: ${trimmedFactSummary || '입력된 사실관계 요약이 없습니다.'}`,
   ].join('\n');
 
+  let sharedMeasureAssessment = inferSchoolViolenceMeasureLevel(
+    inputContent,
+    trimmedFactSummary,
+    expectedMeasure,
+    recordRiskDescription,
+    reasoningPoints.join('\n')
+  );
+  if (hasEightOrNine) {
+    sharedMeasureAssessment = upgradeSharedMeasureAssessment(
+      sharedMeasureAssessment,
+      '7-9',
+      'D06에서 전학 또는 퇴학 등 중대 조치 가능성이 확인되어 7~9호 수준으로 보정했습니다.'
+    );
+  } else if (hasFiveOrMore) {
+    sharedMeasureAssessment = upgradeSharedMeasureAssessment(
+      sharedMeasureAssessment,
+      '5-6',
+      'D06에서 5호 이상 조치 가능성이 확인되어 최소 5~6호 수준으로 보정했습니다.'
+    );
+  } else if (hasHighMeasure) {
+    sharedMeasureAssessment = upgradeSharedMeasureAssessment(
+      sharedMeasureAssessment,
+      '4',
+      'D06에서 4호 이상 조치 가능성이 확인되어 최소 4호 수준으로 보정했습니다.'
+    );
+  }
+
   return {
     diagnosisType: '생활기록부 영향 진단',
     d06StudentRecordV2: true,
@@ -2674,6 +2854,7 @@ const calculateD06StudentRecordResult = (
     },
     inputSummary,
     reasoningPoints,
+    sharedMeasureAssessment,
     recordRiskLevel,
     recordRiskDescription,
     recordImpactFactors,
@@ -2864,6 +3045,9 @@ const calculateD07AdmissionImpactResult = (
   const hasUniversityConcern = hasAny(['모집요강', '대학별', '지원 대학', '지원 예정 대학', '반영 기준', '감점', '지원 제한']);
   const hasAppealConcern = hasAny(['행정심판', '집행정지', '불복', '청구기간', '통보서', '조치결정']);
 
+  let sharedMeasureAssessment = inferSchoolViolenceMeasureLevel(inputContent, trimmedFactSummary);
+  const sharedLevel = sharedMeasureAssessment.level;
+
   let score = 0;
   if (hasMeasure1To3) score += 1;
   if (hasMeasure4OrMore) score += 3;
@@ -2877,7 +3061,7 @@ const calculateD07AdmissionImpactResult = (
   if (hasUniversityConcern) score += 1;
   if (hasAppealConcern) score += 1;
 
-  const admissionImpactLevel: D07AdmissionImpactLevel =
+  let admissionImpactLevel: D07AdmissionImpactLevel =
     hasMeasure5OrMore && (isHighSchool || isAdmissionStudent || hasRecordConcern)
       ? '매우 높음'
       : score >= 9
@@ -2887,6 +3071,24 @@ const calculateD07AdmissionImpactResult = (
           : score >= 3
             ? '보통'
             : '낮음';
+
+  if (sharedLevel === '7-9') {
+    admissionImpactLevel = d07AdmissionImpactLevels.veryHigh;
+  } else if (sharedLevel === '5-6') {
+    admissionImpactLevel = isHighSchool || isAdmissionStudent
+      ? d07AdmissionImpactLevels.veryHigh
+      : admissionImpactLevel === d07AdmissionImpactLevels.low
+        ? d07AdmissionImpactLevels.high
+        : admissionImpactLevel;
+  } else if (sharedLevel === '4') {
+    admissionImpactLevel =
+      admissionImpactLevel === d07AdmissionImpactLevels.low ||
+      admissionImpactLevel === d07AdmissionImpactLevels.normal
+        ? d07AdmissionImpactLevels.high
+        : admissionImpactLevel;
+  } else if ((hasMeasure4OrMore || hasMeasure5OrMore) && admissionImpactLevel === d07AdmissionImpactLevels.low) {
+    admissionImpactLevel = d07AdmissionImpactLevels.normal;
+  }
 
   const admissionImpactDescriptionMap: Record<D07AdmissionImpactLevel, string> = {
     낮음:
@@ -2900,6 +3102,9 @@ const calculateD07AdmissionImpactResult = (
   };
 
   const reasoningPoints: string[] = [];
+  sharedMeasureAssessment.reasons.forEach((reason) => {
+    addUnique(reasoningPoints, `공통 조치수위 추정: ${reason}`);
+  });
   addUnique(
     reasoningPoints,
     hasMeasure5OrMore
@@ -2926,7 +3131,22 @@ const calculateD07AdmissionImpactResult = (
     addUnique(reasoningPoints, '조치결정에 불복할 필요가 있는 경우 행정심판 청구기간과 집행정지 필요성을 함께 확인해야 합니다.');
   }
 
+  if (sharedLevel === '5-6' || sharedLevel === '7-9') {
+    addUnique(reasoningPoints, '입력내용상 5호 특별교육 또는 6호 출석정지 이상 가능성이 언급되거나 추정되어 대입 영향 가능성을 낮게 보기 어렵습니다.');
+  } else if (sharedLevel === '4') {
+    addUnique(reasoningPoints, '2주 이상 진료확인서, 반복성, 집단성, 사이버폭력 등 고위험 정황이 함께 확인되어 4호 이상 조치 가능성을 검토할 필요가 있습니다.');
+  }
+
   const admissionImpactFactors: string[] = [];
+  if (sharedLevel === '4' || sharedLevel === '5-6' || sharedLevel === '7-9') {
+    addUnique(admissionImpactFactors, '4호 이상 조치 가능성');
+    addUnique(admissionImpactFactors, '생활기록부 기재 가능성');
+    addUnique(admissionImpactFactors, '대학별 학교폭력 조치 반영 기준 확인 필요');
+  }
+  if (sharedLevel === '5-6' || sharedLevel === '7-9') {
+    addUnique(admissionImpactFactors, '5호 특별교육 또는 6호 출석정지 가능성');
+    addUnique(admissionImpactFactors, '삭제심의 또는 행정심판 검토 필요');
+  }
   if (isHighSchool || isAdmissionStudent) addUnique(admissionImpactFactors, '고등학생 또는 대입 예정 학생');
   if (hasMeasure4OrMore) addUnique(admissionImpactFactors, '4호 이상 조치 가능성');
   if (hasMeasure5OrMore) addUnique(admissionImpactFactors, '5호 특별교육 이상 조치 가능성');
@@ -2966,7 +3186,9 @@ const calculateD07AdmissionImpactResult = (
     '행정심판 및 집행정지 검토 자료',
   ];
 
-  const expectedMeasure = hasMeasure5OrMore
+  const expectedMeasure = sharedLevel !== 'unknown'
+    ? sharedMeasureAssessment.label
+    : hasMeasure5OrMore
     ? '5호 이상 조치 또는 중한 조치 가능성'
     : hasMeasure4OrMore
       ? '4호 이상 조치 가능성'
@@ -3032,6 +3254,7 @@ const calculateD07AdmissionImpactResult = (
     },
     inputSummary,
     reasoningPoints,
+    sharedMeasureAssessment,
     admissionImpactLevel,
     admissionImpactDescription: admissionImpactDescriptionMap[admissionImpactLevel],
     admissionImpactFactors,
@@ -3384,13 +3607,6 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           d06StudentRecordResult ??
           d07AdmissionImpactResult,
       };
-
-    console.log({
-      type: savedDiagnosisResult.type,
-      resultType: savedDiagnosisResult.resultType,
-      diagnosisCode: savedDiagnosisResult.diagnosisCode,
-      resultSections: savedDiagnosisResult.resultSections,
-    });
 
     sessionStorage.setItem(storageKey, JSON.stringify(savedDiagnosisResult));
 

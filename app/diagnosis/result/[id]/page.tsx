@@ -5,6 +5,12 @@ import { useEffect, useState } from 'react';
 
 const DIAGNOSIS_STORAGE_KEY_PREFIX = 'diagnosis-result';
 
+type SharedMeasureAssessment = {
+  level: string;
+  label: string;
+  reasons: string[];
+};
+
 type DiagnosisResult = {
   type: string;
   resultType?: string;
@@ -53,6 +59,7 @@ type DiagnosisResult = {
       admissionConcern?: string;
     };
     reasoningPoints?: string[];
+    sharedMeasureAssessment?: SharedMeasureAssessment;
     appealGrounds?: string[];
     inputContent?: string;
     factSummary?: string;
@@ -152,6 +159,11 @@ const getD07RenderSections = (diagnosis: DiagnosisResult): D07RenderSections => 
     },
     factSummary: '',
     reasoningPoints: splitResultLines(getSectionText(diagnosis.result, '판단근거')),
+    sharedMeasureAssessment: {
+      level: 'unknown',
+      label: '-',
+      reasons: [],
+    },
     admissionImpactLevel: admissionImpactLevelLine || '-',
     admissionImpactDescription: admissionImpactDescriptionLines.join('\n'),
     admissionImpactFactors: splitResultLines(getSectionText(diagnosis.result, '대입 영향 요소')),
@@ -224,12 +236,6 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
     if (savedResult) {
       try {
         const result = JSON.parse(savedResult) as DiagnosisResult;
-        console.log({
-          type: result.type,
-          resultType: result.resultType,
-          diagnosisCode: result.diagnosisCode,
-          resultSections: result.resultSections,
-        });
         setDiagnosis(result);
       } catch {
         setDiagnosis(null);
@@ -255,40 +261,6 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
       diagnosisIdentityText.includes('대입 영향') ||
       diagnosisIdentityText.includes('대학별 확인 필요사항'));
   const d07Sections = diagnosis && isD07AdmissionReport ? getD07RenderSections(diagnosis) : null;
-  const renderBranch = d07Sections
-    ? 'D07'
-    : diagnosis?.resultSections?.measureScoreV2
-      ? 'measureScoreV2'
-      : diagnosis?.resultSections?.d06StudentRecordV2
-        ? 'd06StudentRecordV2'
-        : diagnosis?.resultSections?.d05RiskV2
-          ? 'd05RiskV2'
-          : diagnosis?.resultSections?.schoolViolenceEligibilityV2
-            ? 'schoolViolenceEligibilityV2'
-            : diagnosis?.resultSections?.principalResolutionV2
-              ? 'principalResolutionV2'
-              : diagnosis?.resultSections?.evidenceCapabilityV2
-                ? 'evidenceCapabilityV2'
-                : diagnosis?.resultSections?.adminAppealV2
-                  ? 'adminAppealV2'
-                  : diagnosis?.resultSections
-                    ? 'genericResultSections'
-                    : 'fallback';
-
-  if (diagnosis) {
-    console.log({
-      d07RenderDebug: true,
-      type: diagnosis.type,
-      resultType: diagnosis.resultType,
-      diagnosisCode: diagnosis.diagnosisCode,
-      hasResultSections: !!diagnosis.resultSections,
-      hasD07Flag: !!diagnosis.resultSections?.d07AdmissionImpactV2,
-      isD07AdmissionReport,
-      renderBranch,
-      resultSections: diagnosis.resultSections,
-    });
-  }
-
   return (
     <div className="card print:rounded-none print:border-0 print:shadow-none">
       <h1 className="mb-4 text-2xl font-black">진단결과</h1>
@@ -959,7 +931,7 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                       {d07Sections.inputDetails?.selectedItems ?? d07Sections.inputContent ?? '-'}
                     </dd>
                     <dt className="font-bold">받은 조치 또는 예상 조치</dt>
-                    <dd>{d07Sections.inputDetails?.expectedMeasure ?? '-'}</dd>
+                    <dd>{d07Sections.inputDetails?.expectedMeasure ?? d07Sections.sharedMeasureAssessment?.label ?? '-'}</dd>
                     <dt className="font-bold">학교급</dt>
                     <dd>{d07Sections.inputDetails?.schoolLevel ?? '-'}</dd>
                     <dt className="font-bold">학년</dt>
