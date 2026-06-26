@@ -7,6 +7,8 @@ const DIAGNOSIS_STORAGE_KEY_PREFIX = 'diagnosis-result';
 
 type DiagnosisResult = {
   type: string;
+  resultType?: string;
+  diagnosisCode?: string;
   content: string;
   result: string;
   resultSections?: {
@@ -111,6 +113,8 @@ type DiagnosisResult = {
   };
 };
 
+type D07RenderSections = NonNullable<DiagnosisResult['resultSections']>;
+
 const circledNumbers = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
 
 const splitResultLines = (value?: string) =>
@@ -121,6 +125,45 @@ const splitResultLines = (value?: string) =>
 
 const asResultItems = (value?: string | string[]) =>
   Array.isArray(value) ? value : splitResultLines(value);
+
+const getSectionText = (result: string, title: string) => {
+  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`${escapedTitle}:?\\n([\\s\\S]*?)(?=\\n\\n[^\\n]+:?\\n|$)`);
+  return result.match(pattern)?.[1]?.trim() ?? '';
+};
+
+const getD07RenderSections = (diagnosis: DiagnosisResult): D07RenderSections => {
+  if (diagnosis.resultSections?.d07AdmissionImpactV2) return diagnosis.resultSections;
+
+  const admissionImpactText = getSectionText(diagnosis.result, '대입 영향 가능성');
+  const [admissionImpactLevelLine, ...admissionImpactDescriptionLines] = splitResultLines(admissionImpactText);
+
+  return {
+    diagnosisType: '대학입시 영향 진단',
+    d07AdmissionImpactV2: true,
+    inputSummary: getSectionText(diagnosis.result, '입력내용') || diagnosis.content,
+    inputContent: diagnosis.content,
+    inputDetails: {
+      selectedItems: diagnosis.content,
+      expectedMeasure: '-',
+      schoolLevel: '-',
+      grade: '-',
+      admissionConcern: '-',
+      factSummary: '',
+    },
+    factSummary: '',
+    reasoningPoints: splitResultLines(getSectionText(diagnosis.result, '판단근거')),
+    admissionImpactLevel: admissionImpactLevelLine || '-',
+    admissionImpactDescription: admissionImpactDescriptionLines.join('\n'),
+    admissionImpactFactors: splitResultLines(getSectionText(diagnosis.result, '대입 영향 요소')),
+    universityCheckPoints: splitResultLines(getSectionText(diagnosis.result, '대학별 확인 필요사항')),
+    recommendedMaterials: splitResultLines(getSectionText(diagnosis.result, '보완자료')),
+    nextActions: getSectionText(diagnosis.result, '다음 대응방향'),
+    expertOpinion: getSectionText(diagnosis.result, '전문가 의견'),
+    caution: getSectionText(diagnosis.result, '주의사항') || diagnosis.result,
+    nextSteps: getSectionText(diagnosis.result, '다음 대응방향'),
+  };
+};
 
 const renderNumberedItems = (items: string[], emptyMessage: string) => (
   <ol className="space-y-2 rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
@@ -189,6 +232,15 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
 
     setIsLoaded(true);
   }, [params.id]);
+
+  const isD07AdmissionReport =
+    !!diagnosis &&
+    (diagnosis.resultSections?.d07AdmissionImpactV2 ||
+      diagnosis.resultType === 'D07' ||
+      diagnosis.diagnosisCode === 'D07' ||
+      diagnosis.type === 'D07' ||
+      diagnosis.type === '대학입시 영향 진단');
+  const d07Sections = diagnosis && isD07AdmissionReport ? getD07RenderSections(diagnosis) : null;
 
   return (
     <div className="card print:rounded-none print:border-0 print:shadow-none">
@@ -849,7 +901,7 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                 </p>
               </section>
             </>
-          ) : diagnosis.resultSections?.d07AdmissionImpactV2 ? (
+          ) : d07Sections ? (
             <>
               <section>
                 <h2 className="mb-2 font-bold">입력내용</h2>
@@ -857,20 +909,20 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                   <dl className="grid gap-3 sm:grid-cols-[12rem_1fr]">
                     <dt className="font-bold">선택/입력한 D07 항목</dt>
                     <dd className="whitespace-pre-wrap">
-                      {diagnosis.resultSections.inputDetails?.selectedItems ?? diagnosis.resultSections.inputContent ?? '-'}
+                      {d07Sections.inputDetails?.selectedItems ?? d07Sections.inputContent ?? '-'}
                     </dd>
                     <dt className="font-bold">받은 조치 또는 예상 조치</dt>
-                    <dd>{diagnosis.resultSections.inputDetails?.expectedMeasure ?? '-'}</dd>
+                    <dd>{d07Sections.inputDetails?.expectedMeasure ?? '-'}</dd>
                     <dt className="font-bold">학교급</dt>
-                    <dd>{diagnosis.resultSections.inputDetails?.schoolLevel ?? '-'}</dd>
+                    <dd>{d07Sections.inputDetails?.schoolLevel ?? '-'}</dd>
                     <dt className="font-bold">학년</dt>
-                    <dd>{diagnosis.resultSections.inputDetails?.grade ?? '-'}</dd>
+                    <dd>{d07Sections.inputDetails?.grade ?? '-'}</dd>
                     <dt className="font-bold">지원 예정 전형 또는 대입 우려사항</dt>
-                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputDetails?.admissionConcern ?? '-'}</dd>
+                    <dd className="whitespace-pre-wrap">{d07Sections.inputDetails?.admissionConcern ?? '-'}</dd>
                     <dt className="font-bold">사실관계 요약</dt>
                     <dd className="whitespace-pre-wrap">
-                      {diagnosis.resultSections.factSummary ||
-                        diagnosis.resultSections.inputDetails?.factSummary ||
+                      {d07Sections.factSummary ||
+                        d07Sections.inputDetails?.factSummary ||
                         '입력한 사실관계 요약이 없습니다.'}
                     </dd>
                   </dl>
@@ -880,7 +932,7 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               <section>
                 <h2 className="mb-2 font-bold">판단근거</h2>
                 {renderNumberedItems(
-                  diagnosis.resultSections.reasoningPoints ?? [],
+                  d07Sections.reasoningPoints ?? [],
                   '저장된 판단근거가 없습니다.'
                 )}
               </section>
@@ -888,10 +940,10 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               <section>
                 <h2 className="mb-2 font-bold">대입 영향 가능성</h2>
                 <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  <p className="text-2xl font-black">{diagnosis.resultSections.admissionImpactLevel ?? '-'}</p>
+                  <p className="text-2xl font-black">{d07Sections.admissionImpactLevel ?? '-'}</p>
                   <p className="mt-3 whitespace-pre-wrap leading-7 font-bold">
-                    {diagnosis.resultSections.admissionImpactDescription ??
-                      diagnosis.resultSections.admissionImpactPossibility ??
+                    {d07Sections.admissionImpactDescription ??
+                      d07Sections.admissionImpactPossibility ??
                       '-'}
                   </p>
                 </div>
@@ -900,7 +952,7 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               <section>
                 <h2 className="mb-2 font-bold">대입 영향 요소</h2>
                 {renderNumberedItems(
-                  diagnosis.resultSections.admissionImpactFactors ?? [],
+                  d07Sections.admissionImpactFactors ?? [],
                   '저장된 대입 영향 요소가 없습니다.'
                 )}
               </section>
@@ -908,7 +960,7 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               <section>
                 <h2 className="mb-2 font-bold">대학별 확인 필요사항</h2>
                 {renderNumberedItems(
-                  diagnosis.resultSections.universityCheckPoints ?? [],
+                  d07Sections.universityCheckPoints ?? [],
                   '저장된 대학별 확인 필요사항이 없습니다.'
                 )}
               </section>
@@ -916,7 +968,7 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               <section>
                 <h2 className="mb-2 font-bold">보완자료</h2>
                 {renderChecklistItems(
-                  diagnosis.resultSections.recommendedMaterials ?? [],
+                  d07Sections.recommendedMaterials ?? [],
                   '저장된 보완자료가 없습니다.'
                 )}
               </section>
@@ -924,21 +976,21 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               <section>
                 <h2 className="mb-2 font-bold">다음 대응방향</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 leading-7 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.nextActions ?? diagnosis.resultSections.nextSteps}
+                  {d07Sections.nextActions ?? d07Sections.nextSteps}
                 </p>
               </section>
 
               <section>
                 <h2 className="mb-2 font-bold">전문가 의견</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 leading-7 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.expertOpinion}
+                  {d07Sections.expertOpinion}
                 </p>
               </section>
 
               <section>
                 <h2 className="mb-2 font-bold">주의사항</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 leading-7 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.caution}
+                  {d07Sections.caution}
                 </p>
               </section>
             </>

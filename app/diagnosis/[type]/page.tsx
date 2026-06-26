@@ -3132,6 +3132,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
       victimNeedsChecked: false,
     });
   const router = useRouter();
+  const isD07AdmissionImpact = ['D07', 'admission', 'college-admission'].includes(params.type);
   const isD05Risk = params.type === 'D05';
   const isMeasure = ['measure', 'action-level', 'D04', 'D05'].includes(params.type);
   const isD04Measure = isMeasure && !isD05Risk;
@@ -3217,7 +3218,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     const d06StudentRecordResult =
       params.type === 'D06' ? calculateD06StudentRecordResult(content, d06FactSummary) : null;
     const d07AdmissionImpactResult =
-      params.type === 'D07' ? calculateD07AdmissionImpactResult(content, d07FactSummary) : null;
+      isD07AdmissionImpact ? calculateD07AdmissionImpactResult(content, d07FactSummary) : null;
     const d05RiskResult = isD05Risk ? calculateD05RiskReportResult(measureOptions, d05FactSummary) : null;
     const measureResult = isD04Measure ? calculateMeasureScoreResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
@@ -3371,6 +3372,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
               : principalResolutionResult
                 ? principalResolutionResult.diagnosisType
                 : params.type,
+        resultType: d07AdmissionImpactResult ? 'D07' : params.type,
+        diagnosisCode: d07AdmissionImpactResult ? 'D07' : params.type,
         content: savedContent,
         result,
         resultSections:
@@ -4007,7 +4010,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
             />
           </section>
         </div>
-      ) : params.type === 'D07' ? (
+      ) : isD07AdmissionImpact ? (
         <div className="space-y-5">
           <textarea
             className="h-60 w-full rounded-xl border p-3"
