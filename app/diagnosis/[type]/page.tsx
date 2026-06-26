@@ -181,6 +181,25 @@ type SchoolViolenceEligibilityResultSections = {
   nextSteps: string;
 };
 
+type EvidenceCapabilityResultSections = {
+  diagnosisType: string;
+  evidenceCapabilityV2: true;
+  inputContent: string;
+  factSummary: string;
+  inputDetails: {
+    evidenceTypes: string;
+    factSummary: string;
+  };
+  reasoningPoints: string[];
+  diagnosisResult: string;
+  missingEvidenceMaterials: string[];
+  evidenceMaterials: string;
+  additionalEvidenceMaterials: string;
+  expertOpinion: string;
+  caution: string;
+  nextSteps: string;
+};
+
 type PrincipalResolutionOptions = {
   incidentContent: string;
   factSummary: string;
@@ -1781,6 +1800,131 @@ const calculateD05RiskResult = (options: MeasureOptions): D05RiskResultSections 
   };
 };
 
+const d03EvidenceItems = [
+  {
+    label: '사건 당시 대화자료',
+    keywords: ['문자', '카카오톡', '카톡', 'dm', '디엠', '단톡', '단체방', '캡처', '채팅', '메시지'],
+    reasoning:
+      '문자, 카카오톡, DM 등 대화자료는 사건 당시의 발언과 정황을 확인하는 데 도움이 될 수 있습니다.',
+  },
+  {
+    label: '사진 또는 동영상',
+    keywords: ['사진', '동영상', '영상', '촬영', '캡처사진'],
+    reasoning:
+      '사진 또는 동영상 자료는 피해 정황이나 현장 상황을 객관적으로 확인하는 데 도움이 될 수 있습니다.',
+  },
+  {
+    label: '녹음파일',
+    keywords: ['녹음', '녹취', '음성파일', '음성 파일'],
+    reasoning:
+      '녹음파일은 발언 내용과 당시 상황을 확인하는 자료가 될 수 있으나, 녹음 경위와 편집 여부가 함께 확인될 필요가 있습니다.',
+  },
+  {
+    label: '병원 진단서 또는 진료확인서',
+    keywords: ['병원', '진단서', '진료확인서', '진료 확인서', '소견서', '치료'],
+    reasoning:
+      '병원 진단서 또는 진료확인서는 신체적·정신적 피해 정도를 설명하는 데 중요한 자료가 될 수 있습니다.',
+  },
+  {
+    label: '위클래스 상담확인서',
+    keywords: ['위클래스', 'wee', '학교상담', '학교 상담'],
+    reasoning:
+      '상담확인서는 피해학생의 불안, 우울, 학교생활 곤란 등 정신적 피해를 설명하는 보완자료가 될 수 있습니다.',
+  },
+  {
+    label: '외부 전문기관 상담확인서',
+    keywords: ['상담확인서', '상담 확인서', '전문기관', '청소년상담', '정신건강', '상담센터'],
+    reasoning:
+      '상담확인서는 피해학생의 불안, 우울, 학교생활 곤란 등 정신적 피해를 설명하는 보완자료가 될 수 있습니다.',
+  },
+  {
+    label: '목격학생 진술서',
+    keywords: ['목격', '목격자', '목격학생', '진술서', '친구 진술'],
+    reasoning:
+      '목격학생 진술은 사건 당시 상황을 제3자의 관점에서 보완하는 자료가 될 수 있습니다.',
+  },
+  {
+    label: '사건 경위 메모',
+    keywords: ['경위', '메모', '일지', '시간순', '정리', '기록'],
+    reasoning:
+      '사건 경위 메모는 발생일시, 장소, 관련학생, 피해내용을 시간순으로 설명하는 기초자료가 될 수 있습니다.',
+  },
+];
+
+const d03AdditionalEvidenceMaterials = [
+  '문자, 카카오톡, DM, 단체방 캡처 원본',
+  '사진, 동영상 원본 파일',
+  '녹음파일 및 녹음 일시 메모',
+  '병원 진단서 또는 진료확인서',
+  '위클래스 상담확인서',
+  '외부 전문기관 상담확인서',
+  '목격학생 진술서',
+  '담임교사 또는 학교 상담 기록',
+  '사건 발생일 기준 시간순 경위서',
+];
+
+const d03NextSteps = [
+  '현재 확보한 증거자료를 기준으로 사건의 발생일시, 장소, 관련학생, 피해내용을 시간순으로 정리하는 것이 중요합니다.',
+  '증거자료는 가능한 원본을 보관하고, 캡처자료는 날짜와 상대방 표시가 보이도록 정리해 주세요.',
+  '피해 정도를 입증할 필요가 있는 경우 병원 진단서, 진료확인서, 위클래스 상담확인서, 외부 전문기관 상담자료를 함께 준비하는 것이 좋습니다.',
+];
+
+const d03ExpertOpinion = [
+  '학교폭력 사안에서는 단순히 증거의 개수보다 사건과 직접 관련되는지, 시간순으로 정리되어 있는지, 원본성이 유지되는지가 중요합니다.',
+  '카카오톡, 문자, 사진, 녹음, 상담확인서, 목격학생 진술 등은 서로 보완관계에 있으므로 한 가지 자료만으로 부족할 수 있습니다.',
+  '따라서 현재 확보한 자료를 기준으로 부족한 증거를 보완하고, 필요한 경우 전문가 상담을 통해 제출자료의 순서와 표현을 점검하는 것이 좋습니다.',
+];
+
+const d03Caution = [
+  '본 결과는 입력내용을 기준으로 한 1차 참고자료이며, 법적 확정판단은 아닙니다.',
+  '증거의 인정 여부와 판단 비중은 학교 조사, 전담기구 검토, 심의위원회 판단, 실제 자료의 원본성·관련성·구체성에 따라 달라질 수 있습니다.',
+];
+
+const calculateEvidenceCapabilityResult = (
+  inputContent: string,
+  factSummary: string
+): EvidenceCapabilityResultSections => {
+  const normalized = `${inputContent}\n${factSummary}`.replace(/\s/g, '').toLowerCase();
+  const matchedItems = d03EvidenceItems.filter((item) =>
+    item.keywords.some((keyword) => normalized.includes(keyword.replace(/\s/g, '').toLowerCase()))
+  );
+  const selectedLabels = matchedItems.map((item) => item.label);
+  const missingEvidenceMaterials = d03EvidenceItems
+    .filter((item) => !selectedLabels.includes(item.label) && item.label !== '녹음파일')
+    .map((item) => item.label);
+  const reasoningPoints = Array.from(new Set(matchedItems.map((item) => item.reasoning)));
+
+  if (reasoningPoints.length === 0 || (matchedItems.length <= 1 && factSummary.trim())) {
+    reasoningPoints.push('현재 입력내용만으로는 증거가 충분하다고 보기 어려우므로 추가 자료 확보가 필요합니다.');
+  }
+
+  const diagnosisResult =
+    matchedItems.length >= 5
+      ? '증거자료 확보 수준: 비교적 양호'
+      : matchedItems.length >= 3
+        ? '증거자료 확보 수준: 보완 필요'
+        : '증거자료 확보 수준: 추가 확보 필요';
+
+  return {
+    diagnosisType: '증거능력 진단 V2',
+    evidenceCapabilityV2: true,
+    inputContent: inputContent.trim(),
+    factSummary: factSummary.trim(),
+    inputDetails: {
+      evidenceTypes: inputContent.trim(),
+      factSummary: factSummary.trim(),
+    },
+    reasoningPoints,
+    diagnosisResult,
+    missingEvidenceMaterials,
+    evidenceMaterials: d03AdditionalEvidenceMaterials.join('\n'),
+    additionalEvidenceMaterials: d03AdditionalEvidenceMaterials.join('\n'),
+    expertOpinion: d03ExpertOpinion.join('\n'),
+    caution: d03Caution.join('\n'),
+    nextSteps: d03NextSteps.join('\n'),
+  };
+};
+
 const buildTypeMessage = (type: string, analysis: ContentAnalysis): DiagnosisMessage => {
   if (type === 'D02') return getD02Message(analysis);
 
@@ -2091,6 +2235,7 @@ const buildResult = (type: string, content: string) => {
 export default function DiagnosisInputPage({ params }: { params: { type: string } }) {
   const [content, setContent] = useState('');
   const [d01FactSummary, setD01FactSummary] = useState('');
+  const [d03FactSummary, setD03FactSummary] = useState('');
   const [measureOptions, setMeasureOptions] = useState<MeasureOptions>({
     position: 'perpetrator',
     incidentContent: '',
@@ -2251,6 +2396,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     const storageKey = `${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`;
     const schoolViolenceEligibilityResult =
       params.type === 'D01' ? calculateSchoolViolenceEligibilityResult(content, d01FactSummary) : null;
+    const evidenceCapabilityResult =
+      params.type === 'D03' ? calculateEvidenceCapabilityResult(content, d03FactSummary) : null;
     const d05RiskResult = isD05Risk ? calculateD05RiskResult(measureOptions) : null;
     const measureResult = isD04Measure ? calculateMeasureScoreResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
@@ -2310,6 +2457,18 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `전문가 의견:\n${principalResolutionResult.expertOpinion}`,
           `주의사항:\n${principalResolutionResult.caution}`,
         ].join('\n\n')
+      : evidenceCapabilityResult
+      ? [
+          `입력내용:\n선택/입력한 증거자료 종류: ${evidenceCapabilityResult.inputContent}`,
+          `사실관계 요약:\n${evidenceCapabilityResult.factSummary || '입력된 사실관계 요약이 없습니다.'}`,
+          `판단근거:\n${evidenceCapabilityResult.reasoningPoints.join('\n')}`,
+          `진단결과:\n${evidenceCapabilityResult.diagnosisResult}`,
+          `부족한 증거자료:\n${evidenceCapabilityResult.missingEvidenceMaterials.join('\n')}`,
+          `추가로 확보하면 좋은 자료:\n${evidenceCapabilityResult.additionalEvidenceMaterials}`,
+          `다음 대응방향:\n${evidenceCapabilityResult.nextSteps}`,
+          `전문가 의견:\n${evidenceCapabilityResult.expertOpinion}`,
+          `주의사항:\n${evidenceCapabilityResult.caution}`,
+        ].join('\n\n')
       : buildResult(params.type, content);
     const savedContent = schoolViolenceEligibilityResult
       ? [
@@ -2331,6 +2490,11 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           ? d05RiskResult.inputSummary
         : principalResolutionResult
           ? principalResolutionResult.inputSummary
+        : evidenceCapabilityResult
+          ? [
+              `선택/입력한 증거자료 종류: ${evidenceCapabilityResult.inputContent}`,
+              `사실관계 요약: ${evidenceCapabilityResult.factSummary || '입력된 사실관계 요약이 없습니다.'}`,
+            ].join('\n')
         : content;
 
     sessionStorage.setItem(
@@ -2340,6 +2504,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           ? adminAppealResult.diagnosisType
           : schoolViolenceEligibilityResult
             ? schoolViolenceEligibilityResult.diagnosisType
+            : evidenceCapabilityResult
+              ? evidenceCapabilityResult.diagnosisType
             : d05RiskResult
               ? d05RiskResult.diagnosisType
             : measureResult
@@ -2350,7 +2516,12 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         content: savedContent,
         result,
         resultSections:
-          schoolViolenceEligibilityResult ?? adminAppealResult ?? d05RiskResult ?? measureResult ?? principalResolutionResult,
+          schoolViolenceEligibilityResult ??
+          adminAppealResult ??
+          d05RiskResult ??
+          measureResult ??
+          principalResolutionResult ??
+          evidenceCapabilityResult,
       })
     );
 
@@ -2880,6 +3051,33 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
                 </label>
               ))}
             </div>
+          </section>
+        </div>
+      ) : params.type === 'D03' ? (
+        <div className="space-y-5">
+          <textarea
+            className="h-60 w-full rounded-xl border p-3"
+            placeholder="확보했거나 준비 중인 증거자료 종류를 입력해 주세요. 예: 카카오톡 캡처, 사진, 녹음파일, 병원 진단서, 위클래스 상담확인서, 목격학생 진술서"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
+
+          <section>
+            <label className="mb-2 block font-bold">사실관계 요약 (선택입력)</label>
+            <p className="mb-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+              ※ 현재 확보한 증거자료, 증거가 필요한 이유, 부족하다고 느끼는 부분을 간략히 입력해 주세요.
+              {'\n'}※ 입력하지 않아도 진단은 가능합니다.
+              {'\n'}※ 입력한 내용은 진단 결과 및 PDF 보고서에 함께 표시됩니다.
+            </p>
+            <textarea
+              className="h-36 w-full rounded-xl border p-3"
+              placeholder={`예)
+• 카카오톡 캡처와 목격학생 진술은 있으나 병원 진단서는 없습니다.
+• 단톡방 욕설 캡처는 있지만 상대 학생이 삭제했다고 주장합니다.
+• 피해학생이 위클래스 상담을 받았고 상담확인서를 준비 중입니다.`}
+              value={d03FactSummary}
+              onChange={(event) => setD03FactSummary(event.target.value)}
+            />
           </section>
         </div>
       ) : params.type === 'D01' ? (

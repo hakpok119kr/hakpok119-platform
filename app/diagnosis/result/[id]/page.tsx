@@ -14,6 +14,7 @@ type DiagnosisResult = {
     adminAppealV2?: boolean;
     principalResolutionV2?: boolean;
     schoolViolenceEligibilityV2?: boolean;
+    evidenceCapabilityV2?: boolean;
     d05RiskV2?: boolean;
     measureScoreV2?: boolean;
     inputDetails?: {
@@ -30,6 +31,7 @@ type DiagnosisResult = {
       retaliationStatus?: string;
       committeeIntent?: string;
       factSummary?: string;
+      evidenceTypes?: string;
     };
     reasoningPoints?: string[];
     inputContent?: string;
@@ -67,6 +69,8 @@ type DiagnosisResult = {
     evidenceIssues?: string;
     proportionalityIssues?: string;
     preparationDocuments?: string;
+    missingEvidenceMaterials?: string[];
+    additionalEvidenceMaterials?: string;
     caution: string;
     nextSteps: string;
   };
@@ -471,6 +475,86 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                 {renderChecklistItems(
                   splitResultLines(diagnosis.resultSections.preparationDocuments),
                   '저장된 준비자료 목록이 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">다음 대응방향</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.nextSteps}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">전문가 의견</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.expertOpinion}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">주의사항</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.caution}
+                </p>
+              </section>
+            </>
+          ) : diagnosis.resultSections?.evidenceCapabilityV2 ? (
+            <>
+              <section>
+                <h2 className="mb-2 font-bold">입력내용</h2>
+                <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  <dl className="grid gap-3 sm:grid-cols-[12rem_1fr]">
+                    <dt className="font-bold">선택/입력한 증거자료 종류</dt>
+                    <dd className="whitespace-pre-wrap">
+                      {diagnosis.resultSections.inputDetails?.evidenceTypes ||
+                        diagnosis.resultSections.inputContent ||
+                        diagnosis.content}
+                    </dd>
+                    <dt className="font-bold">사실관계 요약</dt>
+                    <dd className="whitespace-pre-wrap">
+                      {diagnosis.resultSections.inputDetails?.factSummary ||
+                        diagnosis.resultSections.factSummary ||
+                        '입력된 사실관계 요약이 없습니다.'}
+                    </dd>
+                  </dl>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">판단근거</h2>
+                {renderNumberedItems(
+                  diagnosis.resultSections.reasoningPoints ?? [],
+                  '저장된 판단근거가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 text-lg font-black">진단결과</h2>
+                <div className="rounded-xl border border-slate-300 bg-white p-5 shadow-sm print:shadow-none">
+                  <p className="mb-2 text-sm font-bold text-slate-600">증거능력 1차 진단</p>
+                  <p className="whitespace-pre-wrap text-xl font-black text-slate-950">
+                    {diagnosis.resultSections.diagnosisResult ?? diagnosis.result}
+                  </p>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">부족한 증거자료</h2>
+                {renderChecklistItems(
+                  diagnosis.resultSections.missingEvidenceMaterials ?? [],
+                  '현재 입력내용 기준으로 별도 표시할 부족한 증거자료가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">추가로 확보하면 좋은 자료</h2>
+                {renderChecklistItems(
+                  splitResultLines(
+                    diagnosis.resultSections.additionalEvidenceMaterials ??
+                      diagnosis.resultSections.evidenceMaterials
+                  ),
+                  '저장된 추가 확보자료 목록이 없습니다.'
                 )}
               </section>
 
