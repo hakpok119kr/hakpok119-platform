@@ -5,8 +5,23 @@ import { useEffect, useState } from 'react';
 const STORAGE_KEY = 'hakpok119-reservations';
 
 const reservationStatuses = ['접수', '확인중', '상담확정', '상담완료', '수임검토', '종결'] as const;
+const caseStatuses = ['접수', '조사중', '자료요청', '상담완료', '수임검토', '수임진행', '행정심판', '종결'] as const;
+const managers = ['미지정', '대표행정사', '홍길동 행정사', '김행정 행정사'] as const;
+const documentChecklist = [
+  '학교폭력 신고서',
+  '사실확인서',
+  '진술서',
+  '반성문',
+  '탄원서',
+  '생활기록부',
+  '진단서',
+  '증거자료',
+  '기타자료',
+] as const;
 
 type ReservationStatus = (typeof reservationStatuses)[number];
+type CaseStatus = (typeof caseStatuses)[number];
+type Manager = (typeof managers)[number];
 
 type Reservation = {
   id: string;
@@ -20,6 +35,12 @@ type Reservation = {
   privacyAgreed: boolean;
   status: ReservationStatus;
   createdAt: string;
+  caseNumber?: string;
+  caseStatus?: CaseStatus;
+  manager?: Manager;
+  adminMemo?: string;
+  submittedDocuments?: string[];
+  consultationLog?: string;
 };
 
 const formatDateTime = (value: string) => {
@@ -35,6 +56,25 @@ const formatDateTime = (value: string) => {
   }).format(date);
 };
 
+const createCaseNumber = (year: number, index: number) => {
+  return `HP${year}-${String(index + 1).padStart(4, '0')}`;
+};
+
+const normalizeReservations = (reservations: Reservation[]) => {
+  const year = new Date().getFullYear();
+
+  return reservations.map((reservation, index) => ({
+    ...reservation,
+    status: reservation.status ?? '접수',
+    caseNumber: reservation.caseNumber || createCaseNumber(year, index),
+    caseStatus: reservation.caseStatus ?? '접수',
+    manager: reservation.manager ?? '미지정',
+    adminMemo: reservation.adminMemo ?? '',
+    submittedDocuments: Array.isArray(reservation.submittedDocuments) ? reservation.submittedDocuments : [],
+    consultationLog: reservation.consultationLog ?? '',
+  }));
+};
+
 const readReservations = () => {
   const saved = localStorage.getItem(STORAGE_KEY);
 
@@ -43,7 +83,7 @@ const readReservations = () => {
   }
 
   try {
-    return JSON.parse(saved) as Reservation[];
+    return normalizeReservations(JSON.parse(saved) as Reservation[]);
   } catch {
     return [];
   }
@@ -53,88 +93,191 @@ export default function AdminPage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   useEffect(() => {
-    setReservations(readReservations());
+    const normalized = readReservations();
+    setReservations(normalized);
+
+    if (normalized.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    }
   }, []);
 
-  const updateStatus = (id: string, status: ReservationStatus) => {
+  const updateReservation = (id: string, updates: Partial<Reservation>) => {
     setReservations((current) => {
-      const next = current.map((reservation) => (reservation.id === id ? { ...reservation, status } : reservation));
+      const next = current.map((reservation) => (reservation.id === id ? { ...reservation, ...updates } : reservation));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       return next;
     });
+  };
+
+  const toggleDocument = (reservation: Reservation, documentName: string) => {
+    const currentDocuments = reservation.submittedDocuments ?? [];
+    const submittedDocuments = currentDocuments.includes(documentName)
+      ? currentDocuments.filter((item) => item !== documentName)
+      : [...currentDocuments, documentName];
+
+    updateReservation(reservation.id, { submittedDocuments });
   };
 
   return (
     <div className="space-y-6">
       <div>
         <p className="text-sm font-bold text-point">hakpok119 관리자</p>
-        <h1 className="mt-2 text-3xl font-black">상담예약 관리</h1>
+        <h1 className="mt-2 text-3xl font-black">상담예약 임시 관리자</h1>
       </div>
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
-        현재 상담예약 관리는 임시 저장 방식으로 구현되어 있습니다. 향후 Supabase DB 연동 후 실제 관리자 기능으로
-        전환됩니다.
+        현재 데이터는 브라우저 localStorage에만 저장됩니다. Supabase 연결 전 임시 관리 화면입니다.
       </div>
 
-      <section className="card">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-black">예약 목록</h2>
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-black">예약 및 상담사건 목록</h2>
           <p className="text-sm text-slate-500">총 {reservations.length}건</p>
         </div>
 
         {reservations.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-slate-500">
-            접수된 상담예약이 없습니다.
-          </div>
+          <div className="card border-dashed text-center text-slate-500">접수된 상담예약이 없습니다.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-y border-slate-200 bg-slate-50 text-slate-600">
-                  <th className="px-3 py-3 font-bold">접수일시</th>
-                  <th className="px-3 py-3 font-bold">이름</th>
-                  <th className="px-3 py-3 font-bold">연락처</th>
-                  <th className="px-3 py-3 font-bold">상담유형</th>
-                  <th className="px-3 py-3 font-bold">학생 구분</th>
-                  <th className="px-3 py-3 font-bold">희망일</th>
-                  <th className="px-3 py-3 font-bold">희망시간</th>
-                  <th className="px-3 py-3 font-bold">상태</th>
-                  <th className="px-3 py-3 font-bold">상담 내용 요약</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reservations.map((reservation) => (
-                  <tr key={reservation.id} className="border-b border-slate-100 align-top">
-                    <td className="whitespace-nowrap px-3 py-3">{formatDateTime(reservation.createdAt)}</td>
-                    <td className="whitespace-nowrap px-3 py-3 font-semibold">{reservation.name}</td>
-                    <td className="whitespace-nowrap px-3 py-3">{reservation.phone}</td>
-                    <td className="whitespace-nowrap px-3 py-3">{reservation.consultationType}</td>
-                    <td className="whitespace-nowrap px-3 py-3">{reservation.studentRole}</td>
-                    <td className="whitespace-nowrap px-3 py-3">{reservation.preferredDate}</td>
-                    <td className="whitespace-nowrap px-3 py-3">{reservation.preferredTime}</td>
-                    <td className="min-w-64 px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        {reservationStatuses.map((status) => (
-                          <button
-                            key={status}
-                            type="button"
-                            onClick={() => updateStatus(reservation.id, status)}
-                            className={`rounded-lg border px-2.5 py-1.5 text-xs font-bold ${
-                              reservation.status === status
-                                ? 'border-navy bg-navy text-white'
-                                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                            }`}
-                          >
-                            {status}
-                          </button>
-                        ))}
+          <div className="space-y-4">
+            {reservations.map((reservation) => (
+              <article key={reservation.id} className="card space-y-5">
+                <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-500">{formatDateTime(reservation.createdAt)}</p>
+                        <h3 className="mt-1 text-2xl font-black">{reservation.name}</h3>
                       </div>
-                    </td>
-                    <td className="min-w-72 px-3 py-3 leading-6 text-slate-700">{reservation.summary}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-navy">
+                        {reservation.caseNumber}
+                      </div>
+                    </div>
+
+                    <dl className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+                      <div>
+                        <dt className="font-bold text-slate-500">연락처</dt>
+                        <dd className="mt-1 font-semibold">{reservation.phone}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold text-slate-500">상담유형</dt>
+                        <dd className="mt-1 font-semibold">{reservation.consultationType}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold text-slate-500">학생구분</dt>
+                        <dd className="mt-1 font-semibold">{reservation.studentRole}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold text-slate-500">희망일/시간</dt>
+                        <dd className="mt-1 font-semibold">
+                          {reservation.preferredDate} {reservation.preferredTime}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-bold text-slate-500">상담요약</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{reservation.summary}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                    <label className="space-y-2">
+                      <span className="text-sm font-bold">사건상태</span>
+                      <select
+                        value={reservation.caseStatus ?? '접수'}
+                        onChange={(event) => updateReservation(reservation.id, { caseStatus: event.target.value as CaseStatus })}
+                        className="w-full rounded-lg border border-slate-300 bg-white p-3"
+                      >
+                        {caseStatuses.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-2">
+                      <span className="text-sm font-bold">담당자</span>
+                      <select
+                        value={reservation.manager ?? '미지정'}
+                        onChange={(event) => updateReservation(reservation.id, { manager: event.target.value as Manager })}
+                        className="w-full rounded-lg border border-slate-300 bg-white p-3"
+                      >
+                        {managers.map((manager) => (
+                          <option key={manager} value={manager}>
+                            {manager}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-bold">예약상태</p>
+                  <div className="flex flex-wrap gap-2">
+                    {reservationStatuses.map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => updateReservation(reservation.id, { status })}
+                        className={`rounded-lg border px-3 py-2 text-sm font-bold ${
+                          reservation.status === status
+                            ? 'border-navy bg-navy text-white'
+                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+                  <div className="space-y-3">
+                    <p className="text-sm font-bold">제출자료 체크리스트</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {documentChecklist.map((documentName) => (
+                        <label
+                          key={documentName}
+                          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold"
+                        >
+                          <input
+                            checked={(reservation.submittedDocuments ?? []).includes(documentName)}
+                            onChange={() => toggleDocument(reservation, documentName)}
+                            className="h-4 w-4"
+                            type="checkbox"
+                          />
+                          <span>{documentName}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <label className="space-y-2">
+                      <span className="text-sm font-bold">관리자 메모</span>
+                      <textarea
+                        value={reservation.adminMemo ?? ''}
+                        onChange={(event) => updateReservation(reservation.id, { adminMemo: event.target.value })}
+                        className="min-h-28 w-full rounded-lg border border-slate-300 p-3"
+                        placeholder="학생측 전화 완료, 반성문 작성 안내, 증거자료 요청, 학폭위 일정 확인 필요"
+                      />
+                    </label>
+
+                    <label className="space-y-2">
+                      <span className="text-sm font-bold">상담기록</span>
+                      <textarea
+                        value={reservation.consultationLog ?? ''}
+                        onChange={(event) => updateReservation(reservation.id, { consultationLog: event.target.value })}
+                        className="min-h-32 w-full rounded-lg border border-slate-300 p-3"
+                        placeholder="1차 상담 내용, 추가 상담 필요사항, 학부모 요청사항 등을 기록하세요."
+                      />
+                    </label>
+                  </div>
+                </div>
+              </article>
+            ))}
           </div>
         )}
       </section>
