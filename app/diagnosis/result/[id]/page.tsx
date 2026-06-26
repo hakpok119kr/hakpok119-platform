@@ -454,6 +454,33 @@ const Checklist = ({ items, emptyMessage }: { items: string[]; emptyMessage: str
   </ul>
 );
 
+const ConsultationCta = () => (
+  <section className="overflow-hidden rounded-lg border border-blue-200 bg-blue-50 shadow-sm print:hidden">
+    <div className="flex flex-col gap-5 p-5 md:flex-row md:items-center md:justify-between md:p-6">
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-black text-navy">10분 무료상담 가능</p>
+          <h2 className="mt-1 text-xl font-black text-slate-950">무료상담이 필요하신가요?</h2>
+        </div>
+        <div className="space-y-1 leading-7 text-slate-700">
+          <p className="font-bold text-slate-900">AI 진단 결과를 바탕으로</p>
+          <p className="font-bold text-slate-900">10분 무료상담을 받아보세요.</p>
+          <p>
+            현재 상황을 정리하고, 조치수위, 생활기록부, 대입 영향, 행정심판 가능성을
+            10분 무료상담으로 확인해보세요.
+          </p>
+        </div>
+      </div>
+      <Link
+        href="/reservation"
+        className="btn-primary inline-flex w-full justify-center px-6 py-3 text-center text-base font-black md:w-auto md:shrink-0"
+      >
+        무료상담 예약
+      </Link>
+    </div>
+  </section>
+);
+
 export default function DiagnosisResultPage({ params }: { params: { id: string } }) {
   const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -517,19 +544,11 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
             <ItemList items={viewModel.nextActions} emptyMessage="다음 대응방향이 저장되지 않았습니다." />
           </Section>
 
-          <Section title="상담예약 안내">
-            <div className="space-y-4">
-              <p className="font-bold text-slate-900">추가 상담이 필요한 경우</p>
-              <Checklist items={['10분 무료상담', '20분 상담', '30분 상담', '60분 상담']} emptyMessage="상담 상품을 불러올 수 없습니다." />
-              <Link href="/reservation" className="btn-primary inline-flex print:hidden">
-                상담예약 바로가기
-              </Link>
-            </div>
-          </Section>
-
           <Section title="주의사항">
             <p className="whitespace-pre-wrap leading-7 text-slate-700">{viewModel.caution}</p>
           </Section>
+
+          <ConsultationCta />
         </div>
       ) : (
         <p className="rounded-lg bg-slate-100 p-4">진단 결과가 없습니다. 다시 진단을 진행해주세요.</p>
@@ -543,9 +562,6 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
         ) : null}
         <Link href="/diagnosis" className="btn-outline">
           다시 진단하기
-        </Link>
-        <Link href="/reservation" className="btn-primary">
-          상담예약
         </Link>
       </div>
     </div>
