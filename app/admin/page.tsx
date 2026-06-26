@@ -24,6 +24,7 @@ const documentChecklist = [
 type ReservationStatus = (typeof reservationStatuses)[number];
 type CaseStatus = (typeof caseStatuses)[number];
 type Manager = (typeof managers)[number];
+type ReservationSource = 'supabase' | 'localStorage';
 
 type Reservation = {
   id: string;
@@ -37,12 +38,51 @@ type Reservation = {
   privacyAgreed: boolean;
   status: ReservationStatus;
   createdAt: string;
+  updatedAt?: string;
   caseNumber?: string;
   caseStatus?: CaseStatus;
   manager?: Manager;
   adminMemo?: string;
   submittedDocuments?: string[];
   consultationLog?: string;
+  diagnosisType?: string;
+  diagnosisResultId?: string;
+  diagnosisSummary?: string;
+  source?: string;
+  isDeleted?: boolean;
+};
+
+type ReservationRecord = Partial<Reservation> & {
+  created_at?: string;
+  updated_at?: string;
+  consultation_type?: string;
+  student_type?: string;
+  studentRole?: string;
+  preferred_date?: string;
+  preferred_time?: string;
+  privacy_agreed?: boolean;
+  reservation_status?: string;
+  case_number?: string;
+  case_status?: string;
+  admin_memo?: string;
+  submitted_documents?: string[];
+  consultation_log?: string;
+  diagnosis_type?: string;
+  diagnosis_result_id?: string;
+  diagnosis_summary?: string;
+  is_deleted?: boolean;
+};
+
+const isReservationStatus = (value: unknown): value is ReservationStatus => {
+  return typeof value === 'string' && reservationStatuses.includes(value as ReservationStatus);
+};
+
+const isCaseStatus = (value: unknown): value is CaseStatus => {
+  return typeof value === 'string' && caseStatuses.includes(value as CaseStatus);
+};
+
+const isManager = (value: unknown): value is Manager => {
+  return typeof value === 'string' && managers.includes(value as Manager);
 };
 
 const formatDateTime = (value: string) => {
@@ -62,22 +102,48 @@ const createCaseNumber = (year: number, index: number) => {
   return `HP${year}-${String(index + 1).padStart(4, '0')}`;
 };
 
-const normalizeReservations = (reservations: Reservation[]) => {
+const normalizeReservation = (reservation: ReservationRecord, index: number): Reservation => {
   const year = new Date().getFullYear();
+  const status = reservation.reservation_status ?? reservation.status;
+  const caseStatus = reservation.case_status ?? reservation.caseStatus;
+  const manager = reservation.manager;
 
-  return reservations.map((reservation, index) => ({
-    ...reservation,
-    status: reservation.status ?? '접수',
-    caseNumber: reservation.caseNumber || createCaseNumber(year, index),
-    caseStatus: reservation.caseStatus ?? '접수',
-    manager: reservation.manager ?? '미지정',
-    adminMemo: reservation.adminMemo ?? '',
-    submittedDocuments: Array.isArray(reservation.submittedDocuments) ? reservation.submittedDocuments : [],
-    consultationLog: reservation.consultationLog ?? '',
-  }));
+  return {
+    id: reservation.id ?? `${Date.now()}-${index}`,
+    name: reservation.name ?? '',
+    phone: reservation.phone ?? '',
+    consultationType: reservation.consultation_type ?? reservation.consultationType ?? '',
+    studentRole: reservation.student_type ?? reservation.studentRole ?? '',
+    preferredDate: reservation.preferred_date ?? reservation.preferredDate ?? '',
+    preferredTime: reservation.preferred_time ?? reservation.preferredTime ?? '',
+    summary: reservation.summary ?? '',
+    privacyAgreed: reservation.privacy_agreed ?? reservation.privacyAgreed ?? false,
+    status: isReservationStatus(status) ? status : '접수',
+    createdAt: reservation.created_at ?? reservation.createdAt ?? new Date().toISOString(),
+    updatedAt: reservation.updated_at ?? reservation.updatedAt,
+    caseNumber: reservation.case_number ?? reservation.caseNumber ?? createCaseNumber(year, index),
+    caseStatus: isCaseStatus(caseStatus) ? caseStatus : '접수',
+    manager: isManager(manager) ? manager : '미지정',
+    adminMemo: reservation.admin_memo ?? reservation.adminMemo ?? '',
+    submittedDocuments: Array.isArray(reservation.submitted_documents)
+      ? reservation.submitted_documents
+      : Array.isArray(reservation.submittedDocuments)
+        ? reservation.submittedDocuments
+        : [],
+    consultationLog: reservation.consultation_log ?? reservation.consultationLog ?? '',
+    diagnosisType: reservation.diagnosis_type ?? reservation.diagnosisType,
+    diagnosisResultId: reservation.diagnosis_result_id ?? reservation.diagnosisResultId,
+    diagnosisSummary: reservation.diagnosis_summary ?? reservation.diagnosisSummary,
+    source: reservation.source,
+    isDeleted: reservation.is_deleted ?? reservation.isDeleted ?? false,
+  };
 };
 
-const readReservations = () => {
+const normalizeReservations = (reservations: ReservationRecord[]) => {
+  return reservations.map((reservation, index) => normalizeReservation(reservation, index));
+};
+
+const readLocalReservations = () => {
   const saved = localStorage.getItem(STORAGE_KEY);
 
   if (!saved) {
@@ -85,15 +151,59 @@ const readReservations = () => {
   }
 
   try {
-    return normalizeReservations(JSON.parse(saved) as Reservation[]);
+    return normalizeReservations(JSON.parse(saved) as ReservationRecord[]);
   } catch {
     return [];
   }
 };
 
+const readSupabaseReservations = async () => {
+  const { supabase } = await import('../../lib/supabase');
+  const { data, error } = await supabase
+    .from('reservations')
+    .select(
+      [
+        'id',
+        'created_at',
+        'updated_at',
+        'name',
+        'phone',
+        'consultation_type',
+        'student_type',
+        'preferred_date',
+        'preferred_time',
+        'summary',
+        'privacy_agreed',
+        'reservation_status',
+        'case_number',
+        'case_status',
+        'manager',
+        'admin_memo',
+        'submitted_documents',
+        'consultation_log',
+        'diagnosis_type',
+        'diagnosis_result_id',
+        'diagnosis_summary',
+        'source',
+        'is_deleted',
+      ].join(', ')
+    )
+    .eq('is_deleted', false)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeReservations((data ?? []) as ReservationRecord[]);
+};
+
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthChecked, setIsAuthChecked] = useState(false);
+  const [isLoadingReservations, setIsLoadingReservations] = useState(false);
+  const [reservationSource, setReservationSource] = useState<ReservationSource>('localStorage');
+  const [loadMessage, setLoadMessage] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -108,12 +218,45 @@ export default function AdminPage() {
       return;
     }
 
-    const normalized = readReservations();
-    setReservations(normalized);
+    let isMounted = true;
 
-    if (normalized.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-    }
+    const loadReservations = async () => {
+      setIsLoadingReservations(true);
+      setLoadMessage('');
+
+      try {
+        const supabaseReservations = await readSupabaseReservations();
+
+        if (!isMounted) {
+          return;
+        }
+
+        setReservations(supabaseReservations);
+        setReservationSource('supabase');
+        setLoadMessage('Supabase에서 불러온 예약 목록입니다.');
+      } catch (error) {
+        console.error('Failed to load reservations from Supabase:', error);
+
+        if (!isMounted) {
+          return;
+        }
+
+        const localReservations = readLocalReservations();
+        setReservations(localReservations);
+        setReservationSource('localStorage');
+        setLoadMessage('Supabase 연결 실패로 이 브라우저의 임시 저장 데이터를 표시 중입니다.');
+      } finally {
+        if (isMounted) {
+          setIsLoadingReservations(false);
+        }
+      }
+    };
+
+    loadReservations();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isAuthenticated]);
 
   const handleLogin = (event: FormEvent<HTMLFormElement>) => {
@@ -134,6 +277,8 @@ export default function AdminPage() {
     sessionStorage.removeItem(ADMIN_AUTH_KEY);
     setIsAuthenticated(false);
     setReservations([]);
+    setLoadMessage('');
+    setReservationSource('localStorage');
   };
 
   const updateReservation = (id: string, updates: Partial<Reservation>) => {
@@ -211,8 +356,20 @@ export default function AdminPage() {
       </div>
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
-        현재 데이터는 브라우저 localStorage에만 저장됩니다. Supabase 연결 전 임시 관리 화면입니다.
+        현재 데이터는 Supabase 조회를 우선 사용하며, 연결 실패 시 브라우저 localStorage 임시 저장 데이터를 표시합니다.
       </div>
+
+      {loadMessage ? (
+        <div
+          className={`rounded-lg border p-4 text-sm font-semibold ${
+            reservationSource === 'supabase'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-sky-200 bg-sky-50 text-sky-800'
+          }`}
+        >
+          {loadMessage}
+        </div>
+      ) : null}
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -220,8 +377,10 @@ export default function AdminPage() {
           <p className="text-sm text-slate-500">총 {reservations.length}건</p>
         </div>
 
-        {reservations.length === 0 ? (
-          <div className="card border-dashed text-center text-slate-500">접수된 상담예약이 없습니다.</div>
+        {isLoadingReservations ? (
+          <div className="card border-dashed text-center text-slate-500">예약 목록을 불러오는 중입니다.</div>
+        ) : reservations.length === 0 ? (
+          <div className="card border-dashed text-center text-slate-500">아직 접수된 상담예약이 없습니다.</div>
         ) : (
           <div className="space-y-4">
             {reservations.map((reservation) => (
