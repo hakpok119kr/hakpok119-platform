@@ -23,6 +23,19 @@ type Reservation = {
 
 type ReservationForm = Omit<Reservation, 'id' | 'status' | 'createdAt'>;
 
+type ReservationInsertPayload = {
+  name: string;
+  phone: string;
+  consultation_type: string;
+  student_type: string;
+  preferred_date: string;
+  preferred_time: string;
+  summary: string;
+  privacy_agreed: boolean;
+  reservation_status: '접수';
+  source: 'web';
+};
+
 const initialForm: ReservationForm = {
   name: '',
   phone: '',
@@ -48,6 +61,40 @@ const readReservations = () => {
   }
 };
 
+const saveReservationToLocalStorage = (reservation: Reservation) => {
+  const reservations = readReservations();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([reservation, ...reservations]));
+};
+
+const toReservationInsertPayload = (reservation: Reservation): ReservationInsertPayload => ({
+  name: reservation.name,
+  phone: reservation.phone,
+  consultation_type: reservation.consultationType,
+  student_type: reservation.studentRole,
+  preferred_date: reservation.preferredDate,
+  preferred_time: reservation.preferredTime,
+  summary: reservation.summary,
+  privacy_agreed: reservation.privacyAgreed,
+  reservation_status: '접수',
+  source: 'web',
+});
+
+const saveReservation = async (reservation: Reservation) => {
+  try {
+    const { supabase } = await import('../../lib/supabase');
+    const { error } = await supabase.from('reservations').insert(toReservationInsertPayload(reservation));
+
+    if (error) {
+      throw error;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Failed to save reservation to Supabase:', error);
+    return false;
+  }
+};
+
 export default function ReservationPage() {
   const [form, setForm] = useState<ReservationForm>(initialForm);
   const [message, setMessage] = useState('');
@@ -56,7 +103,7 @@ export default function ReservationPage() {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const nextReservation: Reservation = {
@@ -66,11 +113,15 @@ export default function ReservationPage() {
       createdAt: new Date().toISOString(),
     };
 
-    const reservations = readReservations();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([nextReservation, ...reservations]));
+    const savedToSupabase = await saveReservation(nextReservation);
+    saveReservationToLocalStorage(nextReservation);
 
     setForm(initialForm);
-    setMessage('상담예약이 접수되었습니다. 담당자가 확인 후 연락드리겠습니다.');
+    setMessage(
+      savedToSupabase
+        ? '상담예약이 정상적으로 접수되었습니다. 담당자가 확인 후 연락드리겠습니다.'
+        : '일시적인 서버 오류가 발생했습니다. 예약은 이 브라우저에 임시 저장되었습니다.'
+    );
   };
 
   return (
@@ -186,7 +237,7 @@ export default function ReservationPage() {
             type="checkbox"
           />
           <span className="text-sm text-slate-700">
-            개인정보 수집 및 이용에 동의합니다. 입력한 정보는 상담예약 확인 및 연락을 위해 임시 저장됩니다.
+            개인정보 수집 및 이용에 동의합니다. 입력한 정보는 상담예약 확인 및 연락을 위해 저장됩니다.
           </span>
         </label>
 
