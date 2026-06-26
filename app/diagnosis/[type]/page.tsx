@@ -263,10 +263,13 @@ type D06StudentRecordResultSections = {
   inputSummary: string;
   reasoningPoints: string[];
   sharedMeasureAssessment?: SharedMeasureAssessment;
-  recordRiskLevel: D06RecordRiskLevel;
+  recordRiskLevel: string;
   recordRiskDescription: string;
   recordImpactFactors: string[];
-  deleteReviewNeed: D06RecordRiskLevel;
+  deleteReviewNeed: string;
+  deleteReviewEligibility?: string;
+  deleteReviewTiming?: string;
+  deleteReviewReason?: string;
   deleteReviewDescription: string;
   recommendedMaterials: string[];
   nextActions: string;
@@ -2868,6 +2871,151 @@ const calculateD06StudentRecordResult = (
   };
 };
 
+const d06V2RecommendedMaterials = [
+  '조치결정통지서',
+  '특별교육 이수 확인서 또는 이행자료',
+  '반성문',
+  '재발방지 약속서',
+  '담임교사 또는 상담교사 의견자료',
+  '봉사활동 또는 학교생활 개선자료',
+  '피해회복 노력자료',
+  '보호자 협조자료',
+];
+
+const d06V2Caution =
+  '본 진단은 입력 내용에 따른 참고용 안내입니다. 최종 판단은 조치결정서, 학교생활기록부 기재 지침, 학교 및 교육청 안내에 따라 달라질 수 있습니다.';
+
+const calculateD06StudentRecordAssessmentResult = (
+  content: string,
+  factSummary: string
+): D06StudentRecordResultSections => {
+  const inputContent = content.trim();
+  const trimmedFactSummary = factSummary.trim();
+  const source = `${inputContent}\n${trimmedFactSummary}`;
+  const compact = source.replace(/\s/g, '');
+  const includesKeyword = (keyword: string) => source.includes(keyword) || compact.includes(keyword.replace(/\s/g, ''));
+  const includesAnyKeyword = (keywords: string[]) => keywords.some(includesKeyword);
+  const highMeasureKeywords = ['4호', '사회봉사', '5호', '특별교육', '6호', '출석정지', '7호', '학급교체', '8호', '전학', '9호', '퇴학'];
+  const lowMeasureKeywords = ['학교폭력 아님', '조치없음', '1호', '서면사과', '2호', '접촉금지', '3호', '교내봉사'];
+  const hasHighMeasure = includesAnyKeyword(highMeasureKeywords);
+  const hasLowMeasure = includesAnyKeyword(lowMeasureKeywords);
+  const isHighSchool = includesAnyKeyword(['고등학교', '고등학생', '고1', '고2', '고3', '대입', '입시']);
+  const isMiddleSchool = includesAnyKeyword(['중학교', '중학생', '중1', '중2', '중3']);
+  const isElementarySchool = includesAnyKeyword(['초등학교', '초등학생', '초1', '초2', '초3', '초4', '초5', '초6']);
+  const caseType = hasHighMeasure && isHighSchool
+    ? 'high-school-high-measure'
+    : hasHighMeasure && isMiddleSchool
+      ? 'middle-school-high-measure'
+      : hasLowMeasure
+        ? 'low-measure'
+        : hasHighMeasure
+          ? 'high-measure'
+          : 'unknown';
+  const recordRiskLevel = caseType === 'high-school-high-measure'
+    ? '높음'
+    : caseType === 'middle-school-high-measure' || caseType === 'high-measure'
+      ? '있음'
+      : caseType === 'low-measure'
+        ? '낮음'
+        : '추가 확인 필요';
+  const deleteReviewEligibility = caseType === 'low-measure' ? '해당 가능성 낮음' : hasHighMeasure ? '검토 필요' : '추가 확인 필요';
+  const deleteReviewTiming = caseType === 'high-school-high-measure'
+    ? '졸업 전 삭제심의 가능 여부 및 요건 확인 필요'
+    : caseType === 'middle-school-high-measure'
+      ? '졸업 전 또는 상급학교 진학 전 삭제 가능 여부 확인 필요'
+      : caseType === 'low-measure'
+        ? '현재 단계에서는 조치결정서 및 학교 안내 확인 필요'
+        : '최종 조치수위와 학교 안내에 따른 삭제 가능 시기 확인 필요';
+  const deleteReviewReason = caseType === 'high-school-high-measure'
+    ? '대학입시 및 학생부 반영 가능성이 있으므로 조치결정 이후부터 자료 준비가 필요합니다.'
+    : caseType === 'middle-school-high-measure'
+      ? '상급학교 진학 및 학생부 관리 측면에서 삭제심의 가능성을 미리 확인할 필요가 있습니다.'
+      : caseType === 'low-measure'
+        ? '최종 기재 여부는 조치결정서와 생활기록부 기재 지침에 따라 달라질 수 있습니다.'
+        : '생활기록부 기재 여부는 최종 조치수위와 학교급에 따라 달라지므로 조치결정서 확인 후 자료 준비 여부를 판단해야 합니다.';
+  const schoolLevel = isHighSchool
+    ? '고등학교'
+    : isMiddleSchool
+      ? '중학교'
+      : isElementarySchool
+        ? '초등학교'
+        : '추가 확인 필요';
+  const gradeMatch = source.match(/(?:초|중|고)?\s*([1-6])\s*학년|(?:초|중|고)\s*([1-6])/);
+  const grade = gradeMatch?.[0].trim() ?? '추가 확인 필요';
+  const expectedMeasure = hasHighMeasure
+    ? '4호 이상 조치 가능성 또는 결정'
+    : hasLowMeasure
+      ? '1호~3호 또는 조치없음/학교폭력 아님'
+      : '구체적인 조치수위 추가 확인 필요';
+  const recordRiskDescription = `입력 내용 기준 생활기록부 기재 가능성은 "${recordRiskLevel}"으로 판단됩니다.`;
+  const deleteReviewDescription = `삭제심의 대상 여부는 "${deleteReviewEligibility}"이며, ${deleteReviewTiming}입니다.`;
+  const recordImpactFactors = [
+    hasHighMeasure ? '4호 이상 조치 키워드가 확인되었습니다.' : null,
+    hasLowMeasure ? '1호~3호, 조치없음 또는 학교폭력 아님 키워드가 확인되었습니다.' : null,
+    isHighSchool ? '고등학교 재학 또는 대입 영향 우려가 확인되었습니다.' : null,
+    isMiddleSchool ? '중학교 재학 정보가 확인되었습니다.' : null,
+  ].filter(Boolean) as string[];
+  if (recordImpactFactors.length === 0) {
+    recordImpactFactors.push('학교급과 최종 조치수위 확인이 필요합니다.');
+  }
+  const reasoningPoints = [
+    hasHighMeasure
+      ? '4호 이상 키워드가 확인되어 생활기록부 기재 가능성과 삭제심의 검토 필요성을 함께 판단했습니다.'
+      : hasLowMeasure
+        ? '1호~3호, 조치없음 또는 학교폭력 아님 키워드가 확인되어 생활기록부 기재 가능성을 낮게 판단했습니다.'
+        : '입력 내용만으로 조치수위가 명확하지 않아 조치결정서 확인이 필요합니다.',
+    schoolLevel !== '추가 확인 필요'
+      ? `학교급은 ${schoolLevel}로 확인되어 해당 학교급 기준으로 삭제심의 시기를 안내했습니다.`
+      : '학교급이 명확하지 않아 일반적인 확인 필요 안내를 제공합니다.',
+    deleteReviewReason,
+  ];
+  const inputSummary = [
+    `선택/입력한 D06 항목: ${inputContent}`,
+    `받은 조치 또는 예상 조치: ${expectedMeasure}`,
+    `학교급: ${schoolLevel}`,
+    `학년: ${grade}`,
+    `사실관계 요약: ${trimmedFactSummary || '입력된 사실관계 요약이 없습니다.'}`,
+  ].join('\n');
+  let sharedMeasureAssessment = inferSchoolViolenceMeasureLevel(inputContent, trimmedFactSummary, expectedMeasure, reasoningPoints.join('\n'));
+  if (hasHighMeasure) {
+    sharedMeasureAssessment = upgradeSharedMeasureAssessment(
+      sharedMeasureAssessment,
+      '4',
+      'D06에서 4호 이상 조치 키워드가 확인되어 최소 4호 이상 수준으로 보정했습니다.'
+    );
+  }
+
+  return {
+    diagnosisType: '생활기록부 영향 진단',
+    d06StudentRecordV2: true,
+    inputContent,
+    factSummary: trimmedFactSummary,
+    inputDetails: {
+      selectedItems: inputContent,
+      expectedMeasure,
+      schoolLevel,
+      grade,
+      factSummary: trimmedFactSummary,
+    },
+    inputSummary,
+    reasoningPoints,
+    sharedMeasureAssessment,
+    recordRiskLevel,
+    recordRiskDescription,
+    recordImpactFactors,
+    deleteReviewNeed: deleteReviewEligibility,
+    deleteReviewEligibility,
+    deleteReviewTiming,
+    deleteReviewReason,
+    deleteReviewDescription,
+    recommendedMaterials: d06V2RecommendedMaterials,
+    nextActions: deleteReviewReason,
+    expertOpinion: deleteReviewDescription,
+    caution: d06V2Caution,
+    nextSteps: deleteReviewReason,
+  };
+};
+
 const buildD01ReasoningPoints = (
   normalizedContent: string,
   compactContent: string,
@@ -3439,7 +3587,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     const evidenceCapabilityResult =
       params.type === 'D03' ? calculateEvidenceCapabilityResult(content, d03FactSummary) : null;
     const d06StudentRecordResult =
-      params.type === 'D06' ? calculateD06StudentRecordResult(content, d06FactSummary) : null;
+      params.type === 'D06' ? calculateD06StudentRecordAssessmentResult(content, d06FactSummary) : null;
     const d07AdmissionImpactResult =
       isD07AdmissionImpact ? calculateD07AdmissionImpactResult(content, d07FactSummary) : null;
     const d05RiskResult = isD05Risk ? calculateD05RiskReportResult(measureOptions, d05FactSummary) : null;
@@ -4263,7 +4411,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         <div className="space-y-5">
           <textarea
             className="h-60 w-full rounded-xl border p-3"
-            placeholder="받은 조치 또는 예상 조치, 학교급, 학년, 생활기록부 기재 우려, 삭제심의 필요 여부를 입력해 주세요."
+            placeholder="받은 조치 또는 예상 조치, 학교급, 학년, 생활기록부 기재 우려를 입력해 주세요."
             value={content}
             onChange={(e) => setContent(e.target.value)}
           />
@@ -4271,16 +4419,16 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           <section>
             <label className="mb-2 block font-bold">사실관계 요약 (선택입력)</label>
             <p className="mb-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
-              {'※ 받은 조치, 학교급, 학년, 생활기록부 기재 우려, 삭제심의 필요 여부를 간략히 입력해 주세요.'}
+              {'※ 받은 조치 또는 예상 조치, 학교급, 학년, 생활기록부 기재 우려를 간략히 입력해 주세요.'}
               {'\n※ 입력하지 않아도 진단은 가능합니다.'}
               {'\n※ 입력한 내용은 진단 결과 및 PDF 보고서에 함께 표시됩니다.'}
             </p>
             <textarea
               className="h-36 w-full rounded-xl border p-3"
               placeholder={`예)
-• 중학교 2학년이고 4호 사회봉사 조치를 받을 가능성이 있습니다.
-• 5호 특별교육 조치를 받아 생활기록부 기재 여부가 걱정됩니다.
-• 고등학교 1학년이고 향후 대입에 영향이 있을지 확인하고 싶습니다.`}
+• 고등학교 2학년이고 5호 특별교육 조치를 받았습니다.
+• 생활기록부 기재 여부와 대입 영향이 걱정됩니다.
+• 6호 출석정지 가능성이 있어 학생부 기재 여부를 확인하고 싶습니다.`}
               value={d06FactSummary}
               onChange={(event) => setD06FactSummary(event.target.value)}
             />

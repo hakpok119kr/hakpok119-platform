@@ -84,6 +84,9 @@ type DiagnosisResult = {
     recordRiskDescription?: string;
     recordImpactFactors?: string[];
     deleteReviewNeed?: string;
+    deleteReviewEligibility?: string;
+    deleteReviewTiming?: string;
+    deleteReviewReason?: string;
     deleteReviewDescription?: string;
     expectedMeasures?: string;
     studentRecordImpact?: string;
@@ -425,6 +428,27 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               </section>
 
               <section>
+                <h2 className="mb-2 font-bold">삭제심의 대상 여부</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 text-xl font-black print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.deleteReviewEligibility ?? diagnosis.resultSections.deleteReviewNeed ?? '-'}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">삭제심의 가능 시기</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.deleteReviewTiming ?? diagnosis.resultSections.deleteReviewDescription ?? '-'}
+                </p>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">삭제심의를 준비해야 하는 이유</h2>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  {diagnosis.resultSections.deleteReviewReason ?? diagnosis.resultSections.nextActions ?? '-'}
+                </p>
+              </section>
+
+              <section>
                 <h2 className="mb-2 font-bold">기재 영향 요소</h2>
                 {renderNumberedItems(
                   diagnosis.resultSections.recordImpactFactors ?? [],
@@ -445,10 +469,10 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">보완자료</h2>
+                <h2 className="mb-2 font-bold">준비자료 안내</h2>
                 {renderChecklistItems(
                   diagnosis.resultSections.recommendedMaterials ?? [],
-                  '저장된 보완자료가 없습니다.'
+                  '저장된 준비자료가 없습니다.'
                 )}
               </section>
 
