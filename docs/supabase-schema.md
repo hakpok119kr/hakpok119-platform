@@ -1,25 +1,48 @@
-# 학폭119 Supabase DB 설계 초안 (Ver.1.6)
+# 학폭119 Supabase DB 설계 및 연결 준비 (Ver.1.7)
 
 ## 목적
 
-Ver.1.6에서는 현재 브라우저 `localStorage`에 임시 저장 중인 상담예약 및 사건관리 데이터를 이후 Supabase DB로 이전하기 위한 테이블 설계 문서와 SQL 초안을 정의한다.
+Ver.1.6에서는 현재 브라우저 `localStorage`에 임시 저장 중인 상담예약 및 사건관리 데이터를 Supabase DB로 이전하기 위한 테이블 설계 문서와 SQL 초안을 추가했다.
 
-이번 단계는 설계 문서 작성 단계이며, 실제 Supabase 연결 코드는 작성하지 않는다. 실제 저장, 조회, 인증 연동은 Ver.1.7 이후 단계에서 진행한다.
+Ver.1.7에서는 실제 insert/select/update/delete 구현 없이 Supabase 연결을 위한 기본 환경만 준비한다. 현재 상담예약과 관리자 사건관리 화면은 계속 `localStorage` 기반으로 동작한다.
 
 ## 현재 임시 저장 구조
 
 - 현재 저장 위치: 브라우저 `localStorage`
 - 현재 저장 key: `hakpok119-reservations`
-- 주요 데이터 범위:
-  - 상담예약 기본정보
-  - 예약상태
-  - 사건번호
-  - 사건상태
-  - 담당자
-  - 관리자 메모
-  - 제출자료 체크리스트
-  - 상담기록
-  - 향후 진단결과 연계 가능 정보
+- 현재 저장 방식은 Ver.1.7에서도 유지한다.
+
+주요 데이터 범위:
+- 상담예약 기본정보
+- 예약상태
+- 사건번호
+- 사건상태
+- 담당자
+- 관리자 메모
+- 제출자료 체크리스트
+- 상담기록
+- 향후 진단결과 연계 가능 정보
+
+## Ver.1.7 Supabase 환경 준비
+
+이번 단계에서 추가한 항목:
+- `lib/supabase.ts`: 공통 Supabase client
+- `.env.example`: Supabase 환경변수 예시
+
+사용할 환경변수:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+개발자는 실제 환경에서 `.env.local`에 위 값을 설정해야 한다.
+
+예시:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+```
+
+환경변수가 누락된 상태에서 `lib/supabase.ts`를 import하면 명확한 오류 메시지를 던지도록 구성했다. 단, Ver.1.7에서는 아직 앱 화면에서 Supabase client를 사용하지 않는다.
 
 ## MVP 1단계 테이블 구성
 
@@ -103,6 +126,7 @@ MVP 1단계에서는 `reservations` 테이블 하나로 시작한다.
 
 - Supabase client 설정
 - 환경변수 예시 추가
+- 실제 데이터 저장/조회 로직은 아직 연결하지 않음
 
 ### Ver.1.8
 
@@ -120,4 +144,4 @@ MVP 1단계에서는 `reservations` 테이블 하나로 시작한다.
 
 ## 현재 문서의 범위
 
-이 문서는 Ver.1.6 기준 설계 초안이다. 실제 Supabase 프로젝트 연결, 환경변수 설정, 인증, RLS 운영 정책, 데이터 마이그레이션 스크립트는 이후 버전에서 별도로 구현한다.
+이 문서는 Ver.1.7 기준 설계 및 연결 준비 문서다. 실제 Supabase 프로젝트 연결값, 인증, RLS 운영 정책, 데이터 마이그레이션 스크립트, 화면의 Supabase 연동은 이후 버전에서 별도로 구현한다.
