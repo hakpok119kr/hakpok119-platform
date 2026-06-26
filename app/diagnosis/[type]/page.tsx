@@ -146,6 +146,7 @@ type AdminAppealOptions = {
   position: 'perpetrator' | 'victim';
   reviewStatus: 'before-review' | 'completed-before-notice' | 'notice-received';
   noticeDate: string;
+  factSummary: string;
   offenderMeasures: string[];
   victimMeasures: string[];
   objectionReasons: string[];
@@ -158,6 +159,30 @@ type AdminAppealOptions = {
 type AdminAppealResultSections = {
   diagnosisType: string;
   adminAppealV2: true;
+  inputDetails: {
+    currentPosition: string;
+    reviewStatus: string;
+    noticeDate: string;
+    offenderMeasures: string;
+    victimMeasures: string;
+    objectionReasons: string;
+    procedureIssues: string;
+    evidenceIssues: string;
+    proportionalityIssues: string;
+    urgency: string;
+    factSummary: string;
+  };
+  inputSummary: string;
+  factSummary: string;
+  reasoningPoints: string[];
+  appealGrounds: string[];
+  riskFactors: string[];
+  recommendedMaterials: string[];
+  appealLevel: '낮음' | '보통' | '높음' | '매우 높음';
+  stayNeed: '낮음' | '보통' | '높음' | '매우 높음';
+  stayNeedDescription: string;
+  nextActions: string;
+  expertOpinion: string;
   currentPosition: string;
   reviewStatus: string;
   decisionSummary: string;
@@ -267,24 +292,41 @@ const notice =
 const measureNotice =
   '이 결과는 학교폭력예방법 제17조, 같은 법 시행령 제19조 및 가해학생 조치별 적용 세부기준의 판단요소를 참고한 1차 검토자료이며, 실제 조치는 교육지원청 학교폭력대책심의위원회의 판단에 따라 달라질 수 있습니다.';
 
-const adminAppealCautions = [
-  '본 결과는 입력내용을 기준으로 한 1차 검토자료이며, 실제 행정심판 인용 가능성을 보장하지 않습니다.',
-  '행정심판은 원칙적으로 처분이 있음을 안 날부터 90일 이내, 처분이 있은 날부터 180일 이내에 청구해야 하므로 통지일 확인이 중요합니다.',
-  '4호 이상 조치, 출석정지, 학급교체, 전학 등은 생활기록부와 진학 영향까지 함께 검토가 필요합니다.',
-  '피해학생 측은 조치가 낮거나 보호조치가 부족한 경우, 가해학생 측은 조치가 과중하거나 사실관계·절차상 문제가 있는 경우 행정심판 검토가 필요할 수 있습니다.',
+const preparationDocuments = [
+  '학교폭력 조치결정 통보서',
+  '학교폭력대책심의위원회 결과통지서',
+  '전담조사관 조사보고서 또는 사안조사 자료',
+  '심의위원회 제출 의견서',
+  '학생 진술서',
+  '보호자 의견서',
+  '반성문',
+  '사과 및 화해 노력 자료',
+  '피해회복 관련 자료',
+  '목격학생 진술서',
+  '문자, 카카오톡, DM, 단체방 캡처',
+  '사진, 동영상, 녹음파일',
+  '병원 진단서 또는 상담확인서',
+  '생활기록부 기재 관련 자료',
+  '행정심판 청구기간 확인 자료',
 ];
 
-const preparationDocuments = [
-  '조치결정 통지서',
-  '학교폭력 사안조사 보고서',
-  '심의위원회 회의록 또는 심의 관련 자료',
-  '학생 확인서 및 진술서',
-  '보호자 의견서',
-  '카카오톡, 문자, 녹음, CCTV, 사진 등 증거자료',
-  '진단서, 상담확인서, 치료자료',
-  '생활기록부 또는 진학 관련 자료',
-  '기존 제출 의견서 및 반성문, 탄원서 등',
-];
+const d08NextActions = [
+  '현재 입력내용을 기준으로 행정심판 가능성을 검토하려면 먼저 조치결정 통보서, 심의결과 통지서, 조사자료, 제출 의견서, 증거자료를 시간순으로 정리해야 합니다.',
+  '행정심판은 처분을 안 날부터 90일, 처분이 있었던 날부터 180일 이내 제기하는 것이 원칙이므로 청구기간을 반드시 확인해야 합니다.',
+  '생활기록부 기재, 전학, 특별교육 등 처분 집행으로 회복하기 어려운 손해가 예상되는 경우에는 집행정지 신청도 함께 검토하는 것이 좋습니다.',
+].join('\n');
+
+const d08ExpertOpinion = [
+  '행정심판 가능성은 단순히 억울하다는 사정만으로 판단되지 않고, 절차상 하자, 사실오인, 증거 부족, 처분 과중, 감경사유 미반영 여부를 종합적으로 검토해야 합니다.',
+  '특히 조치결정 통보서, 심의자료, 학생 진술, 목격자 진술, 증거자료, 반성·화해·피해회복 자료를 비교하여 어떤 부분을 다툴 수 있는지 정리하는 것이 중요합니다.',
+  '처분으로 생활기록부 기재 등 회복하기 어려운 손해가 발생할 가능성이 있다면 행정심판과 함께 집행정지 신청 여부를 신속하게 검토할 필요가 있습니다.',
+].join('\n');
+
+const d08Caution = [
+  '본 결과는 입력내용을 기준으로 한 1차 참고자료이며, 법적 확정판단은 아닙니다.',
+  '행정심판 가능성은 실제 처분서, 심의자료, 조사자료, 증거자료, 절차 진행 내용에 따라 달라질 수 있습니다.',
+  '행정심판은 청구기간 제한이 있으므로 처분 통지를 받은 경우 즉시 기간을 확인해야 합니다.',
+].join('\n');
 
 const measureV2Notice =
   '본 결과는 학교폭력예방법 시행령 제19조 및 가해학생 조치별 적용 세부기준의 판단 요소를 참고한 예측 결과입니다. 실제 학교폭력대책심의위원회는 구체적 사실관계, 피해 정도, 진술, 증거, 선도 가능성 등을 종합적으로 판단하므로 실제 결과와 다를 수 있습니다.';
@@ -1046,6 +1088,30 @@ const getDaysFromNotice = (noticeDate: string) => {
   return Math.floor((todayStart.getTime() - date.getTime()) / 86400000);
 };
 
+const pushUnique = (items: string[], item: string) => {
+  if (!items.includes(item)) items.push(item);
+};
+
+const getD08Level = (score: number): AdminAppealResultSections['appealLevel'] => {
+  if (score >= 10) return '매우 높음';
+  if (score >= 7) return '높음';
+  if (score >= 3) return '보통';
+  return '낮음';
+};
+
+const getD08StayNeedDescription = (stayNeed: AdminAppealResultSections['stayNeed']) => {
+  if (stayNeed === '매우 높음') {
+    return '처분 집행으로 회복하기 어려운 손해가 예상되고 불복 사유도 있는 경우 행정심판과 함께 집행정지를 신속히 검토해야 합니다.';
+  }
+  if (stayNeed === '높음') {
+    return '생활기록부 기재, 전학, 특별교육 등 회복하기 어려운 손해가 예상되는 경우 집행정지 신청을 적극 검토할 필요가 있습니다.';
+  }
+  if (stayNeed === '보통') {
+    return '처분의 집행으로 불이익이 예상되는 경우 집행정지 신청 여부를 함께 검토할 수 있습니다.';
+  }
+  return '현재 입력내용만으로는 집행정지 필요성이 크다고 보기는 어렵습니다.';
+};
+
 const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealResultSections => {
   const positionLabel = getPositionLabel(options.position);
   const reviewStatusLabel = getReviewStatusLabel(options.reviewStatus);
@@ -1087,6 +1153,7 @@ const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealRes
   const evidenceCount = getMeaningfulCount(options.evidenceIssues, ['잘 모르겠음']);
   const proportionalityCount = getMeaningfulCount(options.proportionalityIssues, ['잘 모르겠음']);
   const urgencyCount = getMeaningfulCount(options.urgency, ['긴급성 낮음', '잘 모르겠음']);
+  const normalizedFactSummary = options.factSummary.replace(/\s+/g, '');
 
   let score = objectionCount + procedureCount + evidenceCount + proportionalityCount + urgencyCount;
   if (options.reviewStatus === 'before-review') score = Math.max(0, score - 3);
@@ -1105,31 +1172,84 @@ const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealRes
   if (weakVictimProtection) score += 2;
   if (options.position === 'victim' && hasNoOffenderAction) score += 4;
 
-  let appealNeed = '낮음';
-  if (score >= 10 || urgencyCount >= 2) {
-    appealNeed = '긴급 검토 필요';
-  } else if (score >= 7) {
-    appealNeed = '높음';
-  } else if (score >= 3) {
-    appealNeed = '보통';
+  const appealGrounds: string[] = [];
+  const riskFactors: string[] = [];
+  const reasoningPoints: string[] = [];
+
+  if (
+    procedureCount > 0 ||
+    includesAny(normalizedFactSummary, ['절차', '의견진술', '통지', '안내미흡', '미검토', '열람', '의견서'])
+  ) {
+    pushUnique(appealGrounds, '심의 절차에서 의견진술 기회가 충분히 보장되지 않았다면 절차상 하자를 검토할 수 있습니다.');
+    pushUnique(reasoningPoints, '절차상 하자 또는 의견진술 기회 부족 가능성이 있습니다.');
+  }
+  if (
+    evidenceCount > 0 ||
+    includesAny(normalizedFactSummary, ['증거부족', '객관적증거부족', '진술만', '사실오인', '신빙성', '목격자', '불일치'])
+  ) {
+    pushUnique(appealGrounds, '객관적 증거가 부족하고 진술만으로 판단된 경우 사실오인 또는 증거 부족을 주장할 여지가 있습니다.');
+    pushUnique(reasoningPoints, '객관적 증거 부족 또는 사실오인 주장을 검토할 수 있습니다.');
+  }
+  if (
+    proportionalityCount > 0 ||
+    options.objectionReasons.some((item) => item.includes('높음') || item.includes('낮음') || item.includes('감경')) ||
+    includesAny(normalizedFactSummary, ['과하', '과도', '불균형', '형평', '1회성', '감경', '반성', '사과', '화해', '피해회복'])
+  ) {
+    pushUnique(appealGrounds, '사안의 정도에 비해 조치수위가 과하다고 볼 사정이 있으면 처분 과중을 검토할 수 있습니다.');
+    pushUnique(appealGrounds, '반성, 사과, 화해, 피해회복 등 감경사유가 충분히 반영되지 않았다면 조치수위 다툼이 가능할 수 있습니다.');
+    pushUnique(reasoningPoints, '처분수위가 사안에 비해 과하다고 볼 여지가 있습니다.');
+  }
+  if (
+    urgencyCount > 0 ||
+    includesAny(normalizedFactSummary, ['생활기록부', '생기부', '전학', '출석정지', '특별교육', '회복하기어려운손해'])
+  ) {
+    pushUnique(appealGrounds, '생활기록부 기재 등 회복하기 어려운 손해가 예상되는 경우 집행정지 필요성을 함께 검토할 수 있습니다.');
+    pushUnique(reasoningPoints, '처분 집행으로 회복하기 어려운 손해가 발생할 우려가 있습니다.');
+  }
+  if (appealGrounds.length === 0) {
+    pushUnique(appealGrounds, '현재 입력내용만으로는 뚜렷한 불복 사유가 많지 않으므로 처분서와 심의자료 확인이 우선 필요합니다.');
+    pushUnique(reasoningPoints, '명확한 불복 쟁점이 제한적으로 입력되어 추가 자료 확인이 필요합니다.');
   }
 
-  if (options.reviewStatus === 'before-review') {
-    appealNeed = score >= 5 ? '보통' : '낮음';
+  if (
+    options.evidenceIssues.includes('카카오톡, 녹음, CCTV 등 객관자료가 있음') ||
+    includesAny(normalizedFactSummary, ['객관적증거충분', 'cctv', 'CCTV', '녹음', '동영상'])
+  ) {
+    pushUnique(riskFactors, '객관적 증거가 충분한 경우 사실오인 주장은 받아들여지기 어려울 수 있습니다.');
+  }
+  if (
+    includesAny(normalizedFactSummary, ['반복', '지속', '고의', '피해가큼', '피해정도큼']) ||
+    options.objectionReasons.includes('고의성·지속성이 과대평가됨') ||
+    options.objectionReasons.includes('지속성·고의성이 과소평가됨')
+  ) {
+    pushUnique(riskFactors, '반복성, 고의성, 피해 정도가 높게 인정된 경우 처분 과중 주장은 제한될 수 있습니다.');
+  }
+  if (options.procedureIssues.includes('절차상 문제 없음')) {
+    pushUnique(riskFactors, '절차상 하자가 명확하지 않으면 행정심판에서 다툴 쟁점이 약해질 수 있습니다.');
+  }
+  if (
+    includesAny(normalizedFactSummary, ['반성부족', '화해미이행', '사과없', '피해회복부족', '보복', '2차가해']) ||
+    options.urgency.includes('전학·출석정지 등 즉시 영향 있음')
+  ) {
+    pushUnique(riskFactors, '피해회복이나 화해 노력이 부족한 경우 감경 주장이 약해질 수 있습니다.');
+  }
+  if (riskFactors.length === 0) {
+    pushUnique(riskFactors, '현재 입력내용만으로는 뚜렷한 불리한 요소가 확인되지 않았습니다.');
   }
 
-  if (options.position === 'perpetrator' && hasNoOffenderAction) {
-    appealNeed = '낮음';
-  }
+  let appealLevel = getD08Level(score);
+  if (score >= 10 || urgencyCount >= 2) appealLevel = '매우 높음';
+  if (options.reviewStatus === 'before-review') appealLevel = score >= 5 ? '보통' : '낮음';
+  if (options.position === 'perpetrator' && hasNoOffenderAction) appealLevel = '낮음';
 
-  const nextSteps =
-    options.position === 'victim' && hasNoOffenderAction
-      ? '조치없음 또는 학교폭력 아님 결정에 불복하려면 학교폭력 해당성, 사실관계 인정 여부, 증거 판단 누락, 피해 진술 신빙성, 조치없음 결정의 타당성을 중심으로 재심 또는 행정심판 필요성을 검토해 주세요.'
-      : options.reviewStatus === 'before-review'
-      ? '아직 행정심판 단계 전이므로 심의 전 의견서, 증거목록, 진술 정리, 보호조치 또는 감경자료를 먼저 준비해 주세요.'
-      : options.reviewStatus === 'completed-before-notice'
-        ? '조치결정 통지서를 수령하는 즉시 통지일, 조치 내용, 이유 기재를 확인하고 행정심판 청구기간을 계산해 주세요.'
-        : '조치결정 통지서, 사안조사 보고서, 심의자료, 증거자료를 모아 청구취지와 집행정지 필요성을 함께 검토해 주세요.';
+  let stayScore = urgencyCount;
+  if (highOffenderMeasures) stayScore += 2;
+  if (includesAny(normalizedFactSummary, ['생활기록부', '생기부', '전학', '출석정지', '특별교육', '회복하기어려운손해'])) stayScore += 3;
+  const stayNeed: AdminAppealResultSections['stayNeed'] =
+    stayScore >= 5 && appealLevel !== '낮음' ? '매우 높음' : stayScore >= 3 ? '높음' : stayScore >= 1 ? '보통' : '낮음';
+  const stayNeedDescription = getD08StayNeedDescription(stayNeed);
+  const appealNeed = appealLevel;
+
   const noActionVictimIssue = options.position === 'victim' && hasNoOffenderAction
     ? [
         '조치없음 결정에 대한 불복 쟁점',
@@ -1144,11 +1264,49 @@ const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealRes
   const noActionPerpetratorCaution = options.position === 'perpetrator' && hasNoOffenderAction
     ? '가해학생 측에서 조치없음 또는 학교폭력 아님 결정을 받은 경우 본인 행정심판 필요성은 낮은 편이나, 피해학생 측이 조치없음 결정에 불복하여 행정심판 등을 검토할 가능성은 있습니다.'
     : '';
-  const caution = [...adminAppealCautions, noActionPerpetratorCaution].filter(Boolean).join('\n');
+  const caution = [d08Caution, noActionPerpetratorCaution].filter(Boolean).join('\n');
+  const inputDetails = {
+    currentPosition: positionLabel,
+    reviewStatus: reviewStatusLabel,
+    noticeDate: options.noticeDate || '미입력',
+    offenderMeasures: offenderSummary,
+    victimMeasures: victimSummary,
+    objectionReasons: joinLines(options.objectionReasons, '입력된 불복 방향이 없습니다.'),
+    procedureIssues: joinLines(options.procedureIssues, '입력된 절차상 문제가 없습니다.'),
+    evidenceIssues: joinLines(options.evidenceIssues, '입력된 사실관계·증거 문제가 없습니다.'),
+    proportionalityIssues: joinLines(options.proportionalityIssues, '입력된 비례원칙 관련 쟁점이 없습니다.'),
+    urgency: joinLines(options.urgency, '입력된 긴급성 항목이 없습니다.'),
+    factSummary: options.factSummary.trim(),
+  };
+  const inputSummary = [
+    `현재 입장: ${inputDetails.currentPosition}`,
+    `심의 진행 상태: ${inputDetails.reviewStatus}`,
+    `조치결정 통지일: ${inputDetails.noticeDate}`,
+    `가해학생 조치: ${inputDetails.offenderMeasures}`,
+    `피해학생 보호조치: ${inputDetails.victimMeasures}`,
+    `불복 방향: ${inputDetails.objectionReasons}`,
+    `절차상 문제: ${inputDetails.procedureIssues}`,
+    `사실관계·증거 문제: ${inputDetails.evidenceIssues}`,
+    `비례원칙 관련: ${inputDetails.proportionalityIssues}`,
+    `긴급성: ${inputDetails.urgency}`,
+    `사실관계 요약: ${inputDetails.factSummary || '입력된 사실관계 요약이 없습니다.'}`,
+  ].join('\n');
 
   return {
     diagnosisType: '행정심판 가능성 V2',
     adminAppealV2: true,
+    inputDetails,
+    inputSummary,
+    factSummary: options.factSummary.trim(),
+    reasoningPoints,
+    appealGrounds,
+    riskFactors,
+    recommendedMaterials: preparationDocuments,
+    appealLevel,
+    stayNeed,
+    stayNeedDescription,
+    nextActions: d08NextActions,
+    expertOpinion: d08ExpertOpinion,
     currentPosition: positionLabel,
     reviewStatus: reviewStatusLabel,
     decisionSummary,
@@ -1162,7 +1320,7 @@ const calculateAdminAppealResult = (options: AdminAppealOptions): AdminAppealRes
     evidenceIssues: joinLines(options.evidenceIssues, '입력된 사실관계·증거 쟁점이 없습니다.'),
     proportionalityIssues: joinLines(options.proportionalityIssues, '입력된 비례원칙 쟁점이 없습니다.'),
     caution,
-    nextSteps,
+    nextSteps: d08NextActions,
     preparationDocuments: preparationDocuments.join('\n'),
   };
 };
@@ -2493,6 +2651,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
     position: 'perpetrator',
     reviewStatus: 'before-review',
     noticeDate: '',
+    factSummary: '',
     offenderMeasures: ['아직 결정 전'],
     victimMeasures: ['아직 결정 전'],
     objectionReasons: [],
@@ -2630,11 +2789,16 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         ].join('\n\n')
       : adminAppealResult
       ? [
-          `행정심판 청구기간 검토: ${adminAppealResult.filingPeriodReview}`,
-          `행정심판 검토 필요성: ${adminAppealResult.appealNeed}`,
-          `주요 불복 사유: ${adminAppealResult.objectionReasons}`,
-          `주의사항: ${adminAppealResult.caution}`,
-          `다음 대응방향: ${adminAppealResult.nextSteps}`,
+          `입력내용:\n${adminAppealResult.inputSummary}`,
+          `불복 가능 사유:\n${adminAppealResult.appealGrounds.join('\n')}`,
+          `불리한 요소:\n${adminAppealResult.riskFactors.join('\n')}`,
+          `판단근거:\n${adminAppealResult.reasoningPoints.join('\n')}`,
+          `행정심판 가능성: ${adminAppealResult.appealLevel}`,
+          `집행정지 필요성: ${adminAppealResult.stayNeed}\n${adminAppealResult.stayNeedDescription}`,
+          `보완자료:\n${adminAppealResult.recommendedMaterials.join('\n')}`,
+          `다음 대응방향:\n${adminAppealResult.nextActions}`,
+          `전문가 의견:\n${adminAppealResult.expertOpinion}`,
+          `주의사항:\n${adminAppealResult.caution}`,
         ].join('\n\n')
       : d05RiskResult
       ? [
@@ -2695,10 +2859,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
         ].filter(Boolean).join('\n\n')
       : adminAppealResult
       ? [
-          `현재 입장: ${adminAppealResult.currentPosition}`,
-          `심의 진행 상태: ${adminAppealResult.reviewStatus}`,
-          `조치결정 통지일: ${adminAppealOptions.noticeDate || '미입력'}`,
-          adminAppealResult.decisionSummary,
+          adminAppealResult.inputSummary,
         ].join('\n')
       : measureResult
         ? measureResult.inputSummary
@@ -3002,6 +3163,27 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
               </div>
             </section>
           ))}
+
+          <section>
+            <label className="mb-2 block text-lg font-black" htmlFor="d08-fact-summary">
+              사실관계 요약 (선택입력)
+            </label>
+            <p className="mb-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+              ※ 처분내용, 심의 절차, 억울한 점, 증거 부족, 처분이 과하다고 생각하는 이유를 간략히 입력해 주세요.
+              {'\n'}※ 입력하지 않아도 진단은 가능합니다.
+              {'\n'}※ 입력한 내용은 진단 결과 및 PDF 보고서에 함께 표시됩니다.
+            </p>
+            <textarea
+              id="d08-fact-summary"
+              className="min-h-40 w-full rounded-xl border p-3"
+              placeholder={`예)
+• 5호 특별교육 처분을 받았지만, 피해학생 진술 외 객관적 증거가 부족합니다.
+• 심의위원회에서 제출한 의견서가 충분히 검토되지 않은 것 같습니다.
+• 1회성 사안인데 4호 이상의 조치가 내려져 처분이 과하다고 생각합니다.`}
+              value={adminAppealOptions.factSummary}
+              onChange={(event) => updateAdminAppealOption('factSummary', event.target.value)}
+            />
+          </section>
         </div>
       ) : isD04Measure ? (
         <div className="space-y-6">

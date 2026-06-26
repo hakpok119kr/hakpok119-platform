@@ -33,8 +33,19 @@ type DiagnosisResult = {
       factSummary?: string;
       evidenceTypes?: string;
       selectedItems?: string;
+      currentPosition?: string;
+      reviewStatus?: string;
+      noticeDate?: string;
+      offenderMeasures?: string;
+      victimMeasures?: string;
+      objectionReasons?: string;
+      procedureIssues?: string;
+      evidenceIssues?: string;
+      proportionalityIssues?: string;
+      urgency?: string;
     };
     reasoningPoints?: string[];
+    appealGrounds?: string[];
     inputContent?: string;
     factSummary?: string;
     diagnosisResult?: string;
@@ -68,6 +79,9 @@ type DiagnosisResult = {
     reviewStatus?: string;
     decisionSummary?: string;
     filingPeriodReview?: string;
+    appealLevel?: string;
+    stayNeed?: string;
+    stayNeedDescription?: string;
     appealNeed?: string;
     objectionReasons?: string;
     procedureIssues?: string;
@@ -616,65 +630,102 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
           ) : diagnosis.resultSections?.adminAppealV2 ? (
             <>
               <section>
-                <h2 className="mb-2 font-bold">현재 입장</h2>
+                <h2 className="mb-2 font-bold">입력내용</h2>
+                <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  <dl className="grid gap-3 sm:grid-cols-[11rem_1fr]">
+                    <dt className="font-bold">현재 입장</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.currentPosition ?? diagnosis.resultSections.currentPosition ?? '-'}</dd>
+                    <dt className="font-bold">심의 진행 상태</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.reviewStatus ?? diagnosis.resultSections.reviewStatus ?? '-'}</dd>
+                    <dt className="font-bold">조치결정 통지일</dt>
+                    <dd>{diagnosis.resultSections.inputDetails?.noticeDate ?? '-'}</dd>
+                    <dt className="font-bold">가해학생 조치</dt>
+                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputDetails?.offenderMeasures ?? '-'}</dd>
+                    <dt className="font-bold">피해학생 보호조치</dt>
+                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputDetails?.victimMeasures ?? '-'}</dd>
+                    <dt className="font-bold">불복 방향</dt>
+                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputDetails?.objectionReasons ?? diagnosis.resultSections.objectionReasons ?? '-'}</dd>
+                    <dt className="font-bold">절차상 문제</dt>
+                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputDetails?.procedureIssues ?? diagnosis.resultSections.procedureIssues ?? '-'}</dd>
+                    <dt className="font-bold">사실관계·증거 문제</dt>
+                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputDetails?.evidenceIssues ?? diagnosis.resultSections.evidenceIssues ?? '-'}</dd>
+                    <dt className="font-bold">비례원칙 관련</dt>
+                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputDetails?.proportionalityIssues ?? diagnosis.resultSections.proportionalityIssues ?? '-'}</dd>
+                    <dt className="font-bold">긴급성</dt>
+                    <dd className="whitespace-pre-wrap">{diagnosis.resultSections.inputDetails?.urgency ?? '-'}</dd>
+                    <dt className="font-bold">사실관계 요약</dt>
+                    <dd className="whitespace-pre-wrap">
+                      {diagnosis.resultSections.factSummary ||
+                        diagnosis.resultSections.inputDetails?.factSummary ||
+                        '입력된 사실관계 요약이 없습니다.'}
+                    </dd>
+                  </dl>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">불복 가능 사유</h2>
+                {renderNumberedItems(
+                  diagnosis.resultSections.appealGrounds ?? asResultItems(diagnosis.resultSections.objectionReasons),
+                  '저장된 불복 가능 사유가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">불리한 요소</h2>
+                {renderNumberedItems(
+                  asResultItems(diagnosis.resultSections.riskFactors),
+                  '저장된 불리한 요소가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">판단근거</h2>
+                {renderNumberedItems(
+                  diagnosis.resultSections.reasoningPoints ?? [],
+                  '저장된 판단근거가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">행정심판 가능성</h2>
+                <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  <p className="text-2xl font-black">{diagnosis.resultSections.appealLevel ?? diagnosis.resultSections.appealNeed ?? '-'}</p>
+                  <h3 className="mt-4 mb-2 font-bold">주요 사유</h3>
+                  {renderNumberedItems(
+                    diagnosis.resultSections.reasoningPoints ?? [],
+                    '저장된 주요 사유가 없습니다.'
+                  )}
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">집행정지 필요성</h2>
+                <div className="rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
+                  <p className="text-2xl font-black">{diagnosis.resultSections.stayNeed ?? '-'}</p>
+                  <p className="mt-3 whitespace-pre-wrap leading-7">{diagnosis.resultSections.stayNeedDescription}</p>
+                </div>
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">보완자료</h2>
+                {renderChecklistItems(
+                  diagnosis.resultSections.recommendedMaterials ?? splitResultLines(diagnosis.resultSections.preparationDocuments),
+                  '저장된 보완자료가 없습니다.'
+                )}
+              </section>
+
+              <section>
+                <h2 className="mb-2 font-bold">다음 대응방향</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.currentPosition}
+                  {diagnosis.resultSections.nextActions ?? diagnosis.resultSections.nextSteps}
                 </p>
               </section>
 
               <section>
-                <h2 className="mb-2 font-bold">심의 진행 상태</h2>
+                <h2 className="mb-2 font-bold">전문가 의견</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.reviewStatus}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">조치결정 요약</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.decisionSummary}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">행정심판 청구기간 검토</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.filingPeriodReview}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">행정심판 검토 필요성</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.appealNeed}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">주요 불복 사유</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.objectionReasons}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">절차상 쟁점</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.procedureIssues}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">사실관계·증거 쟁점</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.evidenceIssues}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">비례원칙 쟁점</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.proportionalityIssues}
+                  {diagnosis.resultSections.expertOpinion}
                 </p>
               </section>
 
@@ -682,20 +733,6 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
                 <h2 className="mb-2 font-bold">주의사항</h2>
                 <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
                   {diagnosis.resultSections.caution}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">다음 대응방향</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.nextSteps}
-                </p>
-              </section>
-
-              <section>
-                <h2 className="mb-2 font-bold">준비서류</h2>
-                <p className="whitespace-pre-wrap rounded-xl bg-slate-100 p-4 print:border print:border-slate-300 print:bg-white">
-                  {diagnosis.resultSections.preparationDocuments}
                 </p>
               </section>
             </>
