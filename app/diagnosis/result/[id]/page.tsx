@@ -47,7 +47,6 @@ type DiagnosisResult = {
       evidenceIssues?: string;
       proportionalityIssues?: string;
       urgency?: string;
-      selectedItems?: string;
       expectedMeasure?: string;
       schoolLevel?: string;
       grade?: string;
@@ -224,7 +223,14 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
 
     if (savedResult) {
       try {
-        setDiagnosis(JSON.parse(savedResult) as DiagnosisResult);
+        const result = JSON.parse(savedResult) as DiagnosisResult;
+        console.log({
+          type: result.type,
+          resultType: result.resultType,
+          diagnosisCode: result.diagnosisCode,
+          resultSections: result.resultSections,
+        });
+        setDiagnosis(result);
       } catch {
         setDiagnosis(null);
       }
@@ -233,14 +239,55 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
     setIsLoaded(true);
   }, [params.id]);
 
+  const diagnosisIdentityText = diagnosis
+    ? [diagnosis.type, diagnosis.resultType, diagnosis.diagnosisCode, diagnosis.result, diagnosis.content]
+        .filter(Boolean)
+        .join('\n')
+    : '';
   const isD07AdmissionReport =
     !!diagnosis &&
     (diagnosis.resultSections?.d07AdmissionImpactV2 ||
       diagnosis.resultType === 'D07' ||
       diagnosis.diagnosisCode === 'D07' ||
       diagnosis.type === 'D07' ||
-      diagnosis.type === '대학입시 영향 진단');
+      diagnosisIdentityText.includes('D07') ||
+      diagnosisIdentityText.includes('대학입시') ||
+      diagnosisIdentityText.includes('대입 영향') ||
+      diagnosisIdentityText.includes('대학별 확인 필요사항'));
   const d07Sections = diagnosis && isD07AdmissionReport ? getD07RenderSections(diagnosis) : null;
+  const renderBranch = d07Sections
+    ? 'D07'
+    : diagnosis?.resultSections?.measureScoreV2
+      ? 'measureScoreV2'
+      : diagnosis?.resultSections?.d06StudentRecordV2
+        ? 'd06StudentRecordV2'
+        : diagnosis?.resultSections?.d05RiskV2
+          ? 'd05RiskV2'
+          : diagnosis?.resultSections?.schoolViolenceEligibilityV2
+            ? 'schoolViolenceEligibilityV2'
+            : diagnosis?.resultSections?.principalResolutionV2
+              ? 'principalResolutionV2'
+              : diagnosis?.resultSections?.evidenceCapabilityV2
+                ? 'evidenceCapabilityV2'
+                : diagnosis?.resultSections?.adminAppealV2
+                  ? 'adminAppealV2'
+                  : diagnosis?.resultSections
+                    ? 'genericResultSections'
+                    : 'fallback';
+
+  if (diagnosis) {
+    console.log({
+      d07RenderDebug: true,
+      type: diagnosis.type,
+      resultType: diagnosis.resultType,
+      diagnosisCode: diagnosis.diagnosisCode,
+      hasResultSections: !!diagnosis.resultSections,
+      hasD07Flag: !!diagnosis.resultSections?.d07AdmissionImpactV2,
+      isD07AdmissionReport,
+      renderBranch,
+      resultSections: diagnosis.resultSections,
+    });
+  }
 
   return (
     <div className="card print:rounded-none print:border-0 print:shadow-none">

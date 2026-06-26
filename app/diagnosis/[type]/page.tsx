@@ -3352,9 +3352,7 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           ? d07AdmissionImpactResult.inputSummary
         : content;
 
-    sessionStorage.setItem(
-      storageKey,
-      JSON.stringify({
+    const savedDiagnosisResult = {
         type: adminAppealResult
           ? adminAppealResult.diagnosisType
           : schoolViolenceEligibilityResult
@@ -3385,8 +3383,16 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           evidenceCapabilityResult ??
           d06StudentRecordResult ??
           d07AdmissionImpactResult,
-      })
-    );
+      };
+
+    console.log({
+      type: savedDiagnosisResult.type,
+      resultType: savedDiagnosisResult.resultType,
+      diagnosisCode: savedDiagnosisResult.diagnosisCode,
+      resultSections: savedDiagnosisResult.resultSections,
+    });
+
+    sessionStorage.setItem(storageKey, JSON.stringify(savedDiagnosisResult));
 
     router.push(`/diagnosis/result/${resultId}`);
   };
