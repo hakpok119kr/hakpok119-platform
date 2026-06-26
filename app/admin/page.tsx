@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'hakpok119-reservations';
+const ADMIN_AUTH_KEY = 'hakpok119-admin-authenticated';
+const TEMP_ADMIN_PASSWORD = '1190';
 
 const reservationStatuses = ['접수', '확인중', '상담확정', '상담완료', '수임검토', '종결'] as const;
 const caseStatuses = ['접수', '조사중', '자료요청', '상담완료', '수임검토', '수임진행', '행정심판', '종결'] as const;
@@ -90,16 +92,49 @@ const readReservations = () => {
 };
 
 export default function AdminPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   useEffect(() => {
+    setIsAuthenticated(sessionStorage.getItem(ADMIN_AUTH_KEY) === 'true');
+    setIsAuthChecked(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
     const normalized = readReservations();
     setReservations(normalized);
 
     if (normalized.length > 0) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
     }
-  }, []);
+  }, [isAuthenticated]);
+
+  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (password !== TEMP_ADMIN_PASSWORD) {
+      setAuthError('관리자 비밀번호가 올바르지 않습니다.');
+      return;
+    }
+
+    sessionStorage.setItem(ADMIN_AUTH_KEY, 'true');
+    setIsAuthenticated(true);
+    setPassword('');
+    setAuthError('');
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem(ADMIN_AUTH_KEY);
+    setIsAuthenticated(false);
+    setReservations([]);
+  };
 
   const updateReservation = (id: string, updates: Partial<Reservation>) => {
     setReservations((current) => {
@@ -118,11 +153,61 @@ export default function AdminPage() {
     updateReservation(reservation.id, { submittedDocuments });
   };
 
+  if (!isAuthChecked) {
+    return null;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="mx-auto max-w-md">
+        <form onSubmit={handleLogin} className="card space-y-5">
+          <div>
+            <p className="text-sm font-bold text-point">hakpok119 관리자</p>
+            <h1 className="mt-2 text-3xl font-black">관리자 접근</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              상담예약 및 사건관리 정보 보호를 위해 관리자 인증이 필요합니다.
+            </p>
+          </div>
+
+          <label className="block space-y-2">
+            <span className="text-sm font-bold">관리자 비밀번호</span>
+            <input
+              required
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setAuthError('');
+              }}
+              className="w-full rounded-lg border border-slate-300 p-3"
+              placeholder="관리자 비밀번호"
+              type="password"
+            />
+          </label>
+
+          {authError ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+              {authError}
+            </p>
+          ) : null}
+
+          <button type="submit" className="btn-primary w-full">
+            관리자 로그인
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm font-bold text-point">hakpok119 관리자</p>
-        <h1 className="mt-2 text-3xl font-black">상담예약 임시 관리자</h1>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold text-point">hakpok119 관리자</p>
+          <h1 className="mt-2 text-3xl font-black">상담예약 임시 관리자</h1>
+        </div>
+        <button type="button" onClick={handleLogout} className="btn-outline">
+          로그아웃
+        </button>
       </div>
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
