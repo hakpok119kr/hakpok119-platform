@@ -264,6 +264,34 @@ type D06StudentRecordResultSections = {
   nextSteps: string;
 };
 
+type D07AdmissionImpactLevel = '낮음' | '보통' | '높음' | '매우 높음';
+
+type D07AdmissionImpactResultSections = {
+  diagnosisType: string;
+  d07AdmissionImpactV2: true;
+  inputContent: string;
+  factSummary: string;
+  inputDetails: {
+    selectedItems: string;
+    expectedMeasure: string;
+    schoolLevel: string;
+    grade: string;
+    admissionConcern: string;
+    factSummary: string;
+  };
+  inputSummary: string;
+  reasoningPoints: string[];
+  admissionImpactLevel: D07AdmissionImpactLevel;
+  admissionImpactDescription: string;
+  admissionImpactFactors: string[];
+  universityCheckPoints: string[];
+  recommendedMaterials: string[];
+  nextActions: string;
+  expertOpinion: string;
+  caution: string;
+  nextSteps: string;
+};
+
 type PrincipalResolutionOptions = {
   incidentContent: string;
   factSummary: string;
@@ -2799,12 +2827,230 @@ const buildResult = (type: string, content: string) => {
   ].join('\n\n');
 };
 
+const calculateD07AdmissionImpactResult = (
+  content: string,
+  factSummary: string
+): D07AdmissionImpactResultSections => {
+  const inputContent = content.trim();
+  const trimmedFactSummary = factSummary.trim();
+  const source = `${inputContent}\n${trimmedFactSummary}`.toLowerCase();
+  const hasAny = (keywords: string[]) => keywords.some((keyword) => source.includes(keyword.toLowerCase()));
+  const addUnique = (items: string[], item: string) => {
+    if (!items.includes(item)) items.push(item);
+  };
+
+  const hasMeasure1To3 = hasAny(['1호', '2호', '3호', '서면사과', '접촉금지', '교내봉사']);
+  const hasMeasure4OrMore = hasAny([
+    '4호',
+    '5호',
+    '6호',
+    '7호',
+    '8호',
+    '9호',
+    '사회봉사',
+    '특별교육',
+    '출석정지',
+    '학급교체',
+    '전학',
+    '퇴학',
+  ]);
+  const hasMeasure5OrMore = hasAny(['5호', '6호', '7호', '8호', '9호', '특별교육', '출석정지', '학급교체', '전학', '퇴학']);
+  const isHighSchool = hasAny(['고등학교', '고등학생', '고1', '고2', '고3', '고등']);
+  const isAdmissionStudent = hasAny(['대입', '입시', '진학', '수시', '정시', '학생부', '종합전형', '교과전형', '대학']);
+  const hasSoonAdmission = hasAny(['고2', '고3', '3학년', '2학년', '내년', '올해', '지원 예정', '원서']);
+  const hasSusiConcern = hasAny(['수시', '학생부종합', '학종', '학생부교과', '교과전형']);
+  const hasJungsiConcern = hasAny(['정시', '수능']);
+  const hasRecordConcern = hasAny(['생활기록부', '생기부', '기재', '삭제', '삭제심의']);
+  const hasUniversityConcern = hasAny(['모집요강', '대학별', '지원 대학', '지원 예정 대학', '반영 기준', '감점', '지원 제한']);
+  const hasAppealConcern = hasAny(['행정심판', '집행정지', '불복', '청구기간', '통보서', '조치결정']);
+
+  let score = 0;
+  if (hasMeasure1To3) score += 1;
+  if (hasMeasure4OrMore) score += 3;
+  if (hasMeasure5OrMore) score += 2;
+  if (isHighSchool) score += 2;
+  if (isAdmissionStudent) score += 2;
+  if (hasSoonAdmission) score += 1;
+  if (hasSusiConcern) score += 2;
+  if (hasJungsiConcern) score += 1;
+  if (hasRecordConcern) score += 2;
+  if (hasUniversityConcern) score += 1;
+  if (hasAppealConcern) score += 1;
+
+  const admissionImpactLevel: D07AdmissionImpactLevel =
+    hasMeasure5OrMore && (isHighSchool || isAdmissionStudent || hasRecordConcern)
+      ? '매우 높음'
+      : score >= 9
+        ? '매우 높음'
+        : hasMeasure4OrMore || score >= 6
+          ? '높음'
+          : score >= 3
+            ? '보통'
+            : '낮음';
+
+  const admissionImpactDescriptionMap: Record<D07AdmissionImpactLevel, string> = {
+    낮음:
+      '현재 입력내용만으로는 대학입시 영향이 크다고 보기는 어렵지만, 최종 조치수위와 대학별 모집요강 확인은 필요합니다.',
+    보통:
+      '조치수위와 생활기록부 기재 여부에 따라 대입 영향이 달라질 수 있으므로 대학별 반영 기준 확인이 필요합니다.',
+    높음:
+      '4호 이상 조치가 예상되거나 결정된 경우 생활기록부 기재 및 대학별 학교폭력 조치 반영 여부를 신중히 확인해야 합니다.',
+    '매우 높음':
+      '5호 이상 조치 또는 중한 조치가 예상되는 경우 수시·정시 전형에서 불이익 가능성을 검토하고, 행정심판·집행정지·삭제심의 가능성도 함께 검토할 필요가 있습니다.',
+  };
+
+  const reasoningPoints: string[] = [];
+  addUnique(
+    reasoningPoints,
+    hasMeasure5OrMore
+      ? '5호 특별교육 이상 또는 중한 조치 가능성이 확인되어 대입 영향 검토 필요성이 큽니다.'
+      : hasMeasure4OrMore
+        ? '4호 이상 조치가 예상되거나 결정된 경우 생활기록부 기재와 대학별 반영 기준 확인이 필요합니다.'
+        : hasMeasure1To3
+          ? '1호~3호 조치 중심으로 입력되어 상대적으로 중한 조치 가능성은 제한적으로 보입니다.'
+          : '받은 조치 또는 예상 조치수위가 명확하지 않아 최종 조치결정 확인이 필요합니다.'
+  );
+  if (isHighSchool || isAdmissionStudent) {
+    addUnique(reasoningPoints, '고등학생 또는 대입 예정 학생으로 보여 입시 반영 가능성을 함께 검토해야 합니다.');
+  }
+  if (hasSusiConcern || hasJungsiConcern) {
+    addUnique(reasoningPoints, '수시·정시 또는 학생부 전형 관련 우려가 있어 전형별 반영 방식을 확인해야 합니다.');
+  }
+  if (hasRecordConcern) {
+    addUnique(reasoningPoints, '생활기록부 기재 또는 삭제심의 관련 우려가 확인되어 기재 여부와 삭제 가능성 검토가 필요합니다.');
+  }
+  if (hasUniversityConcern) {
+    addUnique(reasoningPoints, '지원 예정 대학의 모집요강과 학교폭력 조치 반영 기준 확인이 필요합니다.');
+  }
+  if (hasAppealConcern || hasMeasure5OrMore) {
+    addUnique(reasoningPoints, '조치결정에 불복할 필요가 있는 경우 행정심판 청구기간과 집행정지 필요성을 함께 확인해야 합니다.');
+  }
+
+  const admissionImpactFactors: string[] = [];
+  if (isHighSchool || isAdmissionStudent) addUnique(admissionImpactFactors, '고등학생 또는 대입 예정 학생');
+  if (hasMeasure4OrMore) addUnique(admissionImpactFactors, '4호 이상 조치 가능성');
+  if (hasMeasure5OrMore) addUnique(admissionImpactFactors, '5호 특별교육 이상 조치 가능성');
+  if (hasRecordConcern || hasMeasure4OrMore) addUnique(admissionImpactFactors, '생활기록부 기재 가능성');
+  if (hasSusiConcern || hasAny(['학생부종합', '학종'])) addUnique(admissionImpactFactors, '수시 학생부종합전형 지원 예정');
+  if (hasSusiConcern || hasAny(['학생부교과', '교과전형'])) addUnique(admissionImpactFactors, '수시 학생부교과전형 지원 예정');
+  addUnique(admissionImpactFactors, '대학별 학교폭력 조치 반영 기준 확인 필요');
+  if (hasAppealConcern) addUnique(admissionImpactFactors, '조치결정 이후 불복기간 경과 우려');
+  if (hasRecordConcern || hasAppealConcern) addUnique(admissionImpactFactors, '삭제심의 또는 행정심판 검토 필요');
+  if (hasAppealConcern || hasMeasure5OrMore) addUnique(admissionImpactFactors, '집행정지 검토 필요');
+  if (admissionImpactFactors.length === 1) {
+    addUnique(admissionImpactFactors, '최종 조치수위와 생활기록부 기재 여부 확인 필요');
+  }
+
+  const universityCheckPoints = [
+    '지원 예정 대학의 모집요강에서 학교폭력 조치 반영 여부를 확인해야 합니다.',
+    '수시 학생부종합전형, 학생부교과전형, 정시전형별 반영 방식이 다른지 확인해야 합니다.',
+    '조치수위별 감점, 지원 제한, 정성평가 반영 여부를 확인해야 합니다.',
+    '생활기록부 기재 여부와 삭제심의 가능성을 함께 확인해야 합니다.',
+    '조치결정에 불복할 경우 행정심판 청구기간과 집행정지 필요성을 확인해야 합니다.',
+  ];
+
+  const recommendedMaterials = [
+    '학교폭력 조치결정 통보서',
+    '학교폭력대책심의위원회 결과통지서',
+    '생활기록부 기재 여부 확인자료',
+    '지원 예정 대학 모집요강',
+    '수시/정시 지원 예정 전형 자료',
+    '학생부종합전형 평가요소 자료',
+    '조치 이행 확인자료',
+    '반성문',
+    '사과 및 화해 노력 자료',
+    '피해회복 관련 자료',
+    '상담확인서',
+    '봉사활동 또는 특별교육 이수자료',
+    '삭제심의 신청 관련 자료',
+    '행정심판 및 집행정지 검토 자료',
+  ];
+
+  const expectedMeasure = hasMeasure5OrMore
+    ? '5호 이상 조치 또는 중한 조치 가능성'
+    : hasMeasure4OrMore
+      ? '4호 이상 조치 가능성'
+      : hasMeasure1To3
+        ? '1호~3호 조치 가능성'
+        : '입력내용만으로 조치수위 특정 어려움';
+  const schoolLevel = isHighSchool ? '고등학생 또는 고등학교 재학으로 보임' : '입력내용만으로 학교급 특정 어려움';
+  const grade = hasAny(['고3', '3학년'])
+    ? '3학년 또는 대입 임박'
+    : hasAny(['고2', '2학년'])
+      ? '2학년 또는 대입 준비 단계'
+      : hasAny(['고1', '1학년'])
+        ? '1학년'
+        : '입력내용만으로 학년 특정 어려움';
+  const admissionConcern = [
+    hasSusiConcern ? '수시/학생부 전형 우려' : null,
+    hasJungsiConcern ? '정시 전형 우려' : null,
+    hasUniversityConcern ? '대학별 모집요강 확인 필요' : null,
+    hasRecordConcern ? '생활기록부 기재 우려' : null,
+  ]
+    .filter(Boolean)
+    .join(', ') || '입력내용만으로 전형 관련 우려 특정 어려움';
+
+  const inputSummary = [
+    `선택/입력한 D07 항목: ${inputContent || '입력된 D07 항목이 없습니다.'}`,
+    `받은 조치 또는 예상 조치: ${expectedMeasure}`,
+    `학교급: ${schoolLevel}`,
+    `학년: ${grade}`,
+    `지원 예정 전형 또는 대입 우려사항: ${admissionConcern}`,
+    `사실관계 요약: ${trimmedFactSummary || '입력한 사실관계 요약이 없습니다.'}`,
+  ].join('\n');
+
+  const nextActions = [
+    '현재 입력내용을 기준으로 대학입시 영향 가능성과 생활기록부 기재 여부를 함께 검토해야 합니다.',
+    '특히 4호 이상 조치가 예상되거나 결정된 경우 지원 예정 대학의 모집요강, 전형별 학교폭력 조치 반영 방식, 조치수위별 감점 또는 정성평가 반영 여부를 확인하는 것이 중요합니다.',
+    '조치가 과도하다고 판단되거나 생활기록부 기재로 회복하기 어려운 손해가 예상되는 경우에는 삭제심의, 행정심판, 집행정지 가능성도 함께 검토하는 것이 좋습니다.',
+  ].join('\n');
+
+  const expertOpinion = [
+    '대학입시 영향은 단순히 학교폭력 신고 여부만으로 결정되는 것이 아니라 최종 조치수위, 생활기록부 기재 여부, 학교급과 학년, 지원 대학의 모집요강, 전형 방식에 따라 달라질 수 있습니다.',
+    '특히 4호 이상 조치가 예상되거나 결정된 경우에는 생활기록부 기재 가능성과 대학별 반영 기준을 함께 확인해야 합니다.',
+    '따라서 조치결정 통보를 받은 경우에는 불복기간, 삭제심의 가능성, 집행정지 필요성, 지원 예정 대학의 반영 기준을 신속히 확인하는 것이 좋습니다.',
+  ].join('\n');
+
+  const caution = [
+    '본 결과는 입력내용을 기준으로 한 1차 참고자료이며, 법적 또는 입시상 확정판단은 아닙니다.',
+    '대학입시 반영 방식은 대학별 모집요강, 전형 유형, 학년도별 기준에 따라 달라질 수 있습니다.',
+    '따라서 지원 예정 대학의 최신 모집요강과 학교폭력 조치 반영 기준을 반드시 별도로 확인해야 합니다.',
+  ].join('\n');
+
+  return {
+    diagnosisType: '대학입시 영향 진단',
+    d07AdmissionImpactV2: true,
+    inputContent,
+    factSummary: trimmedFactSummary,
+    inputDetails: {
+      selectedItems: inputContent || '입력된 D07 항목이 없습니다.',
+      expectedMeasure,
+      schoolLevel,
+      grade,
+      admissionConcern,
+      factSummary: trimmedFactSummary,
+    },
+    inputSummary,
+    reasoningPoints,
+    admissionImpactLevel,
+    admissionImpactDescription: admissionImpactDescriptionMap[admissionImpactLevel],
+    admissionImpactFactors,
+    universityCheckPoints,
+    recommendedMaterials,
+    nextActions,
+    expertOpinion,
+    caution,
+    nextSteps: nextActions,
+  };
+};
+
 export default function DiagnosisInputPage({ params }: { params: { type: string } }) {
   const [content, setContent] = useState('');
   const [d01FactSummary, setD01FactSummary] = useState('');
   const [d03FactSummary, setD03FactSummary] = useState('');
   const [d05FactSummary, setD05FactSummary] = useState('');
   const [d06FactSummary, setD06FactSummary] = useState('');
+  const [d07FactSummary, setD07FactSummary] = useState('');
   const [measureOptions, setMeasureOptions] = useState<MeasureOptions>({
     position: 'perpetrator',
     incidentContent: '',
@@ -2970,6 +3216,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
       params.type === 'D03' ? calculateEvidenceCapabilityResult(content, d03FactSummary) : null;
     const d06StudentRecordResult =
       params.type === 'D06' ? calculateD06StudentRecordResult(content, d06FactSummary) : null;
+    const d07AdmissionImpactResult =
+      params.type === 'D07' ? calculateD07AdmissionImpactResult(content, d07FactSummary) : null;
     const d05RiskResult = isD05Risk ? calculateD05RiskReportResult(measureOptions, d05FactSummary) : null;
     const measureResult = isD04Measure ? calculateMeasureScoreResult(measureOptions) : null;
     const adminAppealResult = isAdminAppeal ? calculateAdminAppealResult(adminAppealOptions) : null;
@@ -3062,6 +3310,18 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           `전문가 의견:\n${d06StudentRecordResult.expertOpinion}`,
           `주의사항:\n${d06StudentRecordResult.caution}`,
         ].join('\n\n')
+      : d07AdmissionImpactResult
+      ? [
+          `입력내용:\n${d07AdmissionImpactResult.inputSummary}`,
+          `판단근거:\n${d07AdmissionImpactResult.reasoningPoints.join('\n')}`,
+          `대입 영향 가능성: ${d07AdmissionImpactResult.admissionImpactLevel}\n${d07AdmissionImpactResult.admissionImpactDescription}`,
+          `대입 영향 요소:\n${d07AdmissionImpactResult.admissionImpactFactors.join('\n')}`,
+          `대학별 확인 필요사항:\n${d07AdmissionImpactResult.universityCheckPoints.join('\n')}`,
+          `보완자료:\n${d07AdmissionImpactResult.recommendedMaterials.join('\n')}`,
+          `다음 대응방향:\n${d07AdmissionImpactResult.nextActions}`,
+          `전문가 의견:\n${d07AdmissionImpactResult.expertOpinion}`,
+          `주의사항:\n${d07AdmissionImpactResult.caution}`,
+        ].join('\n\n')
       : buildResult(params.type, content);
     const savedContent = schoolViolenceEligibilityResult
       ? [
@@ -3087,6 +3347,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
             ].join('\n')
         : d06StudentRecordResult
           ? d06StudentRecordResult.inputSummary
+        : d07AdmissionImpactResult
+          ? d07AdmissionImpactResult.inputSummary
         : content;
 
     sessionStorage.setItem(
@@ -3100,6 +3362,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
               ? evidenceCapabilityResult.diagnosisType
             : d06StudentRecordResult
               ? d06StudentRecordResult.diagnosisType
+            : d07AdmissionImpactResult
+              ? d07AdmissionImpactResult.diagnosisType
             : d05RiskResult
               ? d05RiskResult.diagnosisType
             : measureResult
@@ -3116,7 +3380,8 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
           measureResult ??
           principalResolutionResult ??
           evidenceCapabilityResult ??
-          d06StudentRecordResult,
+          d06StudentRecordResult ??
+          d07AdmissionImpactResult,
       })
     );
 
@@ -3739,6 +4004,33 @@ export default function DiagnosisInputPage({ params }: { params: { type: string 
 • 단톡방에서 모욕적인 말을 했습니다.`}
               value={d01FactSummary}
               onChange={(event) => setD01FactSummary(event.target.value)}
+            />
+          </section>
+        </div>
+      ) : params.type === 'D07' ? (
+        <div className="space-y-5">
+          <textarea
+            className="h-60 w-full rounded-xl border p-3"
+            placeholder="받은 조치 또는 예상 조치, 학교급, 학년, 지원 예정 대학·전형, 대입 영향 우려사항을 입력해 주세요."
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
+
+          <section>
+            <label className="mb-2 block font-bold">사실관계 요약 (선택입력)</label>
+            <p className="mb-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+              {'※ 받은 조치, 학년, 지원 예정 대학·전형, 대입 영향 우려사항을 간략히 입력해 주세요.'}
+              {'\n※ 입력하지 않아도 진단은 가능합니다.'}
+              {'\n※ 입력한 내용은 진단 결과 및 PDF 보고서에 함께 표시됩니다.'}
+            </p>
+            <textarea
+              className="h-36 w-full rounded-xl border p-3"
+              placeholder={`예)
+• 고등학교 2학년이고 5호 특별교육 조치를 받을 가능성이 있습니다.
+• 수시 학생부종합전형 지원 예정이라 학교폭력 조치 반영 여부가 걱정됩니다.
+• 4호 이상 조치가 생활기록부에 기재될 경우 대입 감점 여부를 확인하고 싶습니다.`}
+              value={d07FactSummary}
+              onChange={(event) => setD07FactSummary(event.target.value)}
             />
           </section>
         </div>
