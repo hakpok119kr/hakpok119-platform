@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase/client";
 
 const STORAGE_KEY = "hakpok119-reservations";
@@ -386,7 +387,7 @@ export default function AdminPage() {
   );
 }
 
-function Field({ children, label }: { children: React.ReactNode; label: string }) {
+function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block text-sm font-bold text-slate-700">
       {label}
