@@ -454,7 +454,7 @@ const Checklist = ({ items, emptyMessage }: { items: string[]; emptyMessage: str
   </ul>
 );
 
-const ConsultationCta = () => (
+const ConsultationCta = ({ resultId }: { resultId: string }) => (
   <section className="overflow-hidden rounded-lg border border-blue-200 bg-blue-50 shadow-sm print:hidden">
     <div className="flex flex-col gap-5 p-5 md:flex-row md:items-center md:justify-between md:p-6">
       <div className="space-y-3">
@@ -472,7 +472,7 @@ const ConsultationCta = () => (
         </div>
       </div>
       <Link
-        href={`/reservation?diagnosisResultId=${encodeURIComponent(params.id)}`}
+        href={`/reservation?diagnosisResultId=${encodeURIComponent(resultId)}`}
         className="btn-primary inline-flex w-full justify-center px-6 py-3 text-center text-base font-black md:w-auto md:shrink-0"
       >
         무료상담 예약
@@ -548,7 +548,7 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
             <p className="whitespace-pre-wrap leading-7 text-slate-700">{viewModel.caution}</p>
           </Section>
 
-          <ConsultationCta />
+          <ConsultationCta resultId={params.id} />
         </div>
       ) : (
         <p className="rounded-lg bg-slate-100 p-4">진단 결과가 없습니다. 다시 진단을 진행해주세요.</p>
