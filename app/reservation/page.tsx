@@ -35,7 +35,10 @@ type Reservation = {
   diagnosis_payload?: DiagnosisPayload | null;
 };
 
-type ReservationForm = Omit<Reservation, 'id' | 'status' | 'createdAt'>;
+type ReservationForm = Omit<
+  Reservation,
+  'id' | 'status' | 'createdAt' | 'diagnosis_type' | 'diagnosis_result_id' | 'diagnosis_summary' | 'diagnosis_payload'
+>;
 
 type ReservationInsertPayload = {
   name: string;
