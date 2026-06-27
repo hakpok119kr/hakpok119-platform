@@ -2,10 +2,13 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 const STORAGE_KEY = "hakpok119-reservations";
 const ADMIN_AUTH_KEY = "hakpok119-admin-auth";
 const ADMIN_PASSWORD = "119admin";
+
+type DataSource = "supabase" | "local";
 
 type Reservation = {
   id?: string;
@@ -15,16 +18,24 @@ type Reservation = {
   phone?: string;
   email?: string;
   product?: string;
+  consultation_type?: string;
+  consultationType?: string;
+  student_type?: string;
+  studentRole?: string;
   preferred_date?: string;
+  preferredDate?: string;
   preferred_time?: string;
+  preferredTime?: string;
   content?: string;
   summary?: string;
+  privacy_agreed?: boolean;
+  privacyAgreed?: boolean;
   reservation_status?: string;
   case_number?: string;
   case_status?: string;
   manager?: string;
   admin_memo?: string;
-  submitted_documents?: string;
+  submitted_documents?: string | string[];
   consultation_log?: string;
   diagnosis_type?: string;
   diagnosisType?: string;
@@ -70,13 +81,8 @@ const caseStatusOptions = [
   "행정심판",
   "종결",
 ];
-const managerOptions = ["대표행정사", "홍길동 행정사", "김행정 행정사"];
+const managerOptions = ["대표행정사", "학교폭력 행정팀", "김행정 행정사"];
 const diagnosisTypeOptions = ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08"];
-
-async function getSupabaseClient() {
-  const { supabase } = await import("@/lib/supabase/client");
-  return supabase;
-}
 
 function readLocalReservations() {
   if (typeof window === "undefined") {
@@ -95,20 +101,30 @@ function writeLocalReservations(reservations: Reservation[]) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(reservations));
 }
 
-function normalizeReservation(reservation: Reservation): Reservation {
-  const normalizedEditableFields = editableFields.reduce(
-    (normalized, field) => ({
-      ...normalized,
-      [field]: reservation[field] ?? "",
-    }),
-    reservation,
-  );
+function asText(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).join("\n");
+  }
 
+  return String(value ?? "");
+}
+
+function normalizeReservation(reservation: Reservation): Reservation {
   return {
-    ...normalizedEditableFields,
+    ...reservation,
     created_at: reservation.created_at ?? reservation.createdAt ?? "",
+    consultation_type: reservation.consultation_type ?? reservation.consultationType ?? "",
+    student_type: reservation.student_type ?? reservation.studentRole ?? "",
+    preferred_date: reservation.preferred_date ?? reservation.preferredDate ?? "",
+    preferred_time: reservation.preferred_time ?? reservation.preferredTime ?? "",
+    privacy_agreed: reservation.privacy_agreed ?? reservation.privacyAgreed ?? false,
     reservation_status: reservation.reservation_status || DEFAULT_RESERVATION_STATUS,
+    case_number: reservation.case_number ?? "",
     case_status: reservation.case_status || DEFAULT_CASE_STATUS,
+    manager: reservation.manager ?? "",
+    admin_memo: reservation.admin_memo ?? "",
+    submitted_documents: asText(reservation.submitted_documents),
+    consultation_log: reservation.consultation_log ?? "",
     diagnosis_type: reservation.diagnosis_type ?? reservation.diagnosisType ?? "",
     diagnosis_result_id: reservation.diagnosis_result_id ?? reservation.diagnosisResultId ?? "",
     diagnosis_summary: reservation.diagnosis_summary ?? reservation.diagnosisSummary ?? "",
@@ -130,10 +146,7 @@ function normalizeReservations(reservations: Reservation[]) {
     const match = caseNumber.match(/^HP-(\d{8})-(\d{4})$/);
     if (match) {
       const [, dateCode, sequence] = match;
-      lastSequenceByDate.set(
-        dateCode,
-        Math.max(lastSequenceByDate.get(dateCode) ?? 0, Number(sequence)),
-      );
+      lastSequenceByDate.set(dateCode, Math.max(lastSequenceByDate.get(dateCode) ?? 0, Number(sequence)));
     }
   });
 
@@ -167,6 +180,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<DataSource>("supabase");
   const [isLoading, setIsLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -198,10 +212,7 @@ export default function AdminPage() {
         }
       }
 
-      if (
-        reservationStatusFilter &&
-        reservation.reservation_status !== reservationStatusFilter
-      ) {
+      if (reservationStatusFilter && reservation.reservation_status !== reservationStatusFilter) {
         return false;
       }
 
@@ -221,10 +232,7 @@ export default function AdminPage() {
         if (getDiagnosisTypeCode(reservation.diagnosis_type)) {
           return false;
         }
-      } else if (
-        diagnosisTypeFilter &&
-        getDiagnosisTypeCode(reservation.diagnosis_type) !== diagnosisTypeFilter
-      ) {
+      } else if (diagnosisTypeFilter && getDiagnosisTypeCode(reservation.diagnosis_type) !== diagnosisTypeFilter) {
         return false;
       }
 
@@ -260,13 +268,16 @@ export default function AdminPage() {
     setIsLoading(true);
     setMessage("");
 
-    const localReservations = normalizeReservations(readLocalReservations());
-
     try {
-      const supabase = await getSupabaseClient();
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
       const { data, error } = await supabase
         .from("reservations")
         .select("*")
+        .eq("is_deleted", false)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -274,27 +285,17 @@ export default function AdminPage() {
       }
 
       const nextReservations = normalizeReservations(data ?? []);
-
-      if (nextReservations.length === 0 && localReservations.length > 0) {
-        setReservations(localReservations);
-        setSelectedId(localReservations[0] ? getReservationKey(localReservations[0]) : null);
-        writeLocalReservations(localReservations);
-        return;
-      }
-
+      setDataSource("supabase");
       setReservations(nextReservations);
-      if (nextReservations.length > 0) {
-        writeLocalReservations(nextReservations);
-      }
       setSelectedId(nextReservations[0] ? getReservationKey(nextReservations[0]) : null);
+      setMessage("Supabase reservations 테이블에서 데이터를 불러왔습니다.");
     } catch (error) {
       console.error("Failed to load reservations from Supabase:", error);
+      const localReservations = normalizeReservations(readLocalReservations());
+      setDataSource("local");
       setReservations(localReservations);
       setSelectedId(localReservations[0] ? getReservationKey(localReservations[0]) : null);
-      if (localReservations.length > 0) {
-        writeLocalReservations(localReservations);
-      }
-      setMessage("서버 예약정보를 불러오지 못해 브라우저 임시저장 데이터를 표시합니다.");
+      setMessage("Supabase 조회에 실패해 localStorage fallback 데이터를 표시합니다.");
     } finally {
       setIsLoading(false);
     }
@@ -313,18 +314,10 @@ export default function AdminPage() {
     setMessage("");
   }
 
-  function updateLocalField(
-    reservation: Reservation,
-    field: EditableReservationField,
-    value: string,
-  ) {
-    setReservations((current) => {
-      const nextReservations = current.map((item) =>
-        getReservationKey(item) === getReservationKey(reservation) ? { ...item, [field]: value } : item,
-      );
-      writeLocalReservations(nextReservations);
-      return nextReservations;
-    });
+  function updateLocalField(reservation: Reservation, field: EditableReservationField, value: string) {
+    setReservations((current) =>
+      current.map((item) => (getReservationKey(item) === getReservationKey(reservation) ? { ...item, [field]: value } : item)),
+    );
   }
 
   async function saveReservation(reservation: Reservation) {
@@ -332,7 +325,7 @@ export default function AdminPage() {
     const payload = editableFields.reduce(
       (nextPayload, field) => ({
         ...nextPayload,
-        [field]: reservation[field] ?? "",
+        [field]: asText(reservation[field]),
       }),
       {} as Record<EditableReservationField, string>,
     );
@@ -340,14 +333,28 @@ export default function AdminPage() {
     setSavingId(key);
     setMessage("");
 
-    if (reservation.id) {
-      const supabase = await getSupabaseClient();
-      const { error } = await supabase.from("reservations").update(payload).eq("id", reservation.id);
+    if (dataSource === "supabase" && reservation.id) {
+      const supabase = getSupabaseClient();
 
-      if (error) {
-        setMessage("Supabase 저장에 실패했습니다. localStorage 백업은 유지되었습니다.");
-        setSavingId(null);
-        return;
+      if (supabase) {
+        const { data, error } = await supabase
+          .from("reservations")
+          .update(payload)
+          .eq("id", reservation.id)
+          .select("*")
+          .single();
+
+        if (!error) {
+          const updatedReservation = normalizeReservation(data as Reservation);
+          setReservations((current) =>
+            current.map((item) => (getReservationKey(item) === key ? updatedReservation : item)),
+          );
+          setMessage("사건관리 정보가 Supabase에 저장되었습니다.");
+          setSavingId(null);
+          return;
+        }
+
+        console.error("Failed to update reservation in Supabase:", error);
       }
     }
 
@@ -358,12 +365,8 @@ export default function AdminPage() {
       writeLocalReservations(nextReservations);
       return nextReservations;
     });
-
-    setMessage(
-      reservation.id
-        ? "사건관리 정보가 Supabase와 localStorage에 저장되었습니다."
-        : "id가 없어 localStorage 백업에만 저장되었습니다.",
-    );
+    setDataSource("local");
+    setMessage("Supabase 저장에 실패해 localStorage fallback에 저장했습니다.");
     setSavingId(null);
   }
 
@@ -402,7 +405,7 @@ export default function AdminPage() {
         <div>
           <h1 className="text-3xl font-black">관리자 사건관리</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Supabase reservations 테이블과 localStorage 백업을 함께 관리합니다.
+            Supabase reservations 테이블을 기준으로 관리하고, 장애 시 localStorage fallback을 사용합니다.
           </p>
         </div>
         <button className="btn-outline" disabled={isLoading} onClick={loadReservations} type="button">
@@ -498,9 +501,7 @@ export default function AdminPage() {
           {reservations.length === 0 ? (
             <div className="card text-sm text-slate-600">표시할 예약 데이터가 없습니다.</div>
           ) : filteredReservations.length === 0 ? (
-            <div className="card text-sm text-slate-600">
-              검색 조건에 맞는 상담예약이 없습니다.
-            </div>
+            <div className="card text-sm text-slate-600">검색 조건에 맞는 상담예약이 없습니다.</div>
           ) : (
             filteredReservations.map((reservation) => {
               const key = getReservationKey(reservation);
@@ -534,14 +535,14 @@ export default function AdminPage() {
                 <Info label="신청자" value={selectedReservation.name} />
                 <Info label="연락처" value={selectedReservation.phone} />
                 <Info label="이메일" value={selectedReservation.email} />
-                <Info label="상담상품" value={selectedReservation.product} />
+                <Info label="상담상품" value={selectedReservation.product ?? selectedReservation.consultation_type} />
                 <Info
                   label="희망일시"
-                  value={[selectedReservation.preferred_date, selectedReservation.preferred_time]
-                    .filter(Boolean)
-                    .join(" ")}
+                  value={[selectedReservation.preferred_date, selectedReservation.preferred_time].filter(Boolean).join(" ")}
                 />
                 <Info label="접수일" value={formatDate(selectedReservation.created_at)} />
+                <Info label="학생구분" value={selectedReservation.student_type} />
+                <Info label="상담요약" value={selectedReservation.summary} />
               </div>
 
               <DiagnosisResult reservation={selectedReservation} />
@@ -550,9 +551,7 @@ export default function AdminPage() {
                 <Field label="예약상태">
                   <select
                     className="w-full rounded-xl border border-slate-300 p-3"
-                    onChange={(event) =>
-                      updateLocalField(selectedReservation, "reservation_status", event.target.value)
-                    }
+                    onChange={(event) => updateLocalField(selectedReservation, "reservation_status", event.target.value)}
                     value={selectedReservation.reservation_status || ""}
                   >
                     <option value="">선택</option>
@@ -566,18 +565,14 @@ export default function AdminPage() {
                 <Field label="사건번호">
                   <input
                     className="w-full rounded-xl border border-slate-300 p-3"
-                    onChange={(event) =>
-                      updateLocalField(selectedReservation, "case_number", event.target.value)
-                    }
+                    onChange={(event) => updateLocalField(selectedReservation, "case_number", event.target.value)}
                     value={selectedReservation.case_number || ""}
                   />
                 </Field>
                 <Field label="사건상태">
                   <select
                     className="w-full rounded-xl border border-slate-300 p-3"
-                    onChange={(event) =>
-                      updateLocalField(selectedReservation, "case_status", event.target.value)
-                    }
+                    onChange={(event) => updateLocalField(selectedReservation, "case_status", event.target.value)}
                     value={selectedReservation.case_status || ""}
                   >
                     <option value="">선택</option>
@@ -591,9 +586,7 @@ export default function AdminPage() {
                 <Field label="담당자">
                   <select
                     className="w-full rounded-xl border border-slate-300 p-3"
-                    onChange={(event) =>
-                      updateLocalField(selectedReservation, "manager", event.target.value)
-                    }
+                    onChange={(event) => updateLocalField(selectedReservation, "manager", event.target.value)}
                     value={selectedReservation.manager || ""}
                   >
                     <option value="">미지정</option>
@@ -607,18 +600,14 @@ export default function AdminPage() {
                 <Field label="제출서류">
                   <textarea
                     className="min-h-28 w-full rounded-xl border border-slate-300 p-3"
-                    onChange={(event) =>
-                      updateLocalField(selectedReservation, "submitted_documents", event.target.value)
-                    }
-                    value={selectedReservation.submitted_documents || ""}
+                    onChange={(event) => updateLocalField(selectedReservation, "submitted_documents", event.target.value)}
+                    value={asText(selectedReservation.submitted_documents)}
                   />
                 </Field>
                 <Field label="상담기록">
                   <textarea
                     className="min-h-28 w-full rounded-xl border border-slate-300 p-3"
-                    onChange={(event) =>
-                      updateLocalField(selectedReservation, "consultation_log", event.target.value)
-                    }
+                    onChange={(event) => updateLocalField(selectedReservation, "consultation_log", event.target.value)}
                     value={selectedReservation.consultation_log || ""}
                   />
                 </Field>
@@ -626,9 +615,7 @@ export default function AdminPage() {
                   <Field label="관리자 메모">
                     <textarea
                       className="min-h-32 w-full rounded-xl border border-slate-300 p-3"
-                      onChange={(event) =>
-                        updateLocalField(selectedReservation, "admin_memo", event.target.value)
-                      }
+                      onChange={(event) => updateLocalField(selectedReservation, "admin_memo", event.target.value)}
                       value={selectedReservation.admin_memo || ""}
                     />
                   </Field>
@@ -680,10 +667,10 @@ function DiagnosisResult({ reservation }: { reservation: Reservation }) {
       </div>
       {payloadText ? (
         <details className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
-          <summary className="cursor-pointer text-sm font-bold text-slate-700">
-            진단 원본 데이터 보기
-          </summary>
-          <p className="mt-2 text-xs text-slate-500">관리자 확인용 데이터입니다. 개인정보 취급에 유의해주세요.</p>
+          <summary className="cursor-pointer text-sm font-bold text-slate-700">진단 원본 데이터 보기</summary>
+          <p className="mt-2 text-xs text-slate-500">
+            관리자 확인용 데이터입니다. 개인정보 취급에 유의해주세요.
+          </p>
           <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">
             {payloadText}
           </pre>

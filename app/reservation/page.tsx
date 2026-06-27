@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
-const STORAGE_KEY = 'hakpok119-reservations';
-const DIAGNOSIS_STORAGE_KEY_PREFIX = 'diagnosis-result';
+const STORAGE_KEY = "hakpok119-reservations";
+const DIAGNOSIS_STORAGE_KEY_PREFIX = "diagnosis-result";
 
 type DiagnosisPayload = Record<string, unknown>;
 
@@ -14,8 +15,8 @@ type LinkedDiagnosis = {
   diagnosis_payload: DiagnosisPayload;
 };
 
-const consultationTypes = ['10분 무료상담', '20분 상담', '30분 상담', '60분 상담'];
-const studentRoles = ['피해학생 측', '가해학생 측', '학부모', '기타'];
+const consultationTypes = ["10분 무료상담", "20분 상담", "30분 상담", "60분 상담"];
+const studentRoles = ["피해학생 측", "가해학생 측", "학부모", "기타"];
 
 type Reservation = {
   id: string;
@@ -27,8 +28,8 @@ type Reservation = {
   preferredTime: string;
   summary: string;
   privacyAgreed: boolean;
-  status: '접수';
-  createdAt: string;
+  reservation_status: string;
+  created_at: string;
   diagnosis_type?: string | null;
   diagnosis_result_id?: string | null;
   diagnosis_summary?: string | null;
@@ -37,7 +38,13 @@ type Reservation = {
 
 type ReservationForm = Omit<
   Reservation,
-  'id' | 'status' | 'createdAt' | 'diagnosis_type' | 'diagnosis_result_id' | 'diagnosis_summary' | 'diagnosis_payload'
+  | "id"
+  | "reservation_status"
+  | "created_at"
+  | "diagnosis_type"
+  | "diagnosis_result_id"
+  | "diagnosis_summary"
+  | "diagnosis_payload"
 >;
 
 type ReservationInsertPayload = {
@@ -49,8 +56,8 @@ type ReservationInsertPayload = {
   preferred_time: string;
   summary: string;
   privacy_agreed: boolean;
-  reservation_status: '접수';
-  source: 'web';
+  reservation_status: string;
+  source: string;
   diagnosis_type?: string | null;
   diagnosis_result_id?: string | null;
   diagnosis_summary?: string | null;
@@ -58,18 +65,18 @@ type ReservationInsertPayload = {
 };
 
 const initialForm: ReservationForm = {
-  name: '',
-  phone: '',
+  name: "",
+  phone: "",
   consultationType: consultationTypes[0],
   studentRole: studentRoles[0],
-  preferredDate: '',
-  preferredTime: '',
-  summary: '',
+  preferredDate: "",
+  preferredTime: "",
+  summary: "",
   privacyAgreed: false,
 };
 
 const readReservations = () => {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  const saved = window.localStorage.getItem(STORAGE_KEY);
 
   if (!saved) {
     return [];
@@ -84,26 +91,26 @@ const readReservations = () => {
 
 const saveReservationToLocalStorage = (reservation: Reservation) => {
   const reservations = readReservations();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([reservation, ...reservations]));
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify([reservation, ...reservations]));
 };
 
 const isRecord = (value: unknown): value is DiagnosisPayload =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const toText = (value: unknown) => {
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value.trim();
   }
 
-  if (typeof value === 'number' || typeof value === 'boolean') {
+  if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
 
-  return '';
+  return "";
 };
 
 const compactText = (value: unknown, maxLength = 80) => {
-  const text = toText(value).replace(/\s+/g, ' ');
+  const text = toText(value).replace(/\s+/g, " ");
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
 };
 
@@ -115,7 +122,7 @@ const firstText = (...values: unknown[]) => {
     }
   }
 
-  return '';
+  return "";
 };
 
 const textList = (value: unknown, maxItems = 3) => {
@@ -129,7 +136,7 @@ const textList = (value: unknown, maxItems = 3) => {
   }
 
   return text
-    .split(/\n|,|ㆍ|·/)
+    .split(/\n|,|ㆍ/)
     .map((item) => compactText(item, 36))
     .filter(Boolean)
     .slice(0, maxItems);
@@ -142,7 +149,7 @@ const createDiagnosisSummary = (payload: DiagnosisPayload) => {
     sections.diagnosisType,
     payload.type,
     payload.diagnosisCode,
-    payload.resultType
+    payload.resultType,
   );
   const result = firstText(
     sections.diagnosisResult,
@@ -152,7 +159,7 @@ const createDiagnosisSummary = (payload: DiagnosisPayload) => {
     sections.possibility,
     sections.recordRiskLevel,
     sections.admissionImpactLevel,
-    payload.result
+    payload.result,
   );
   const coreItems = [
     ...textList(sections.reasoningPoints),
@@ -165,14 +172,14 @@ const createDiagnosisSummary = (payload: DiagnosisPayload) => {
   ].filter(Boolean);
 
   return [
-    `진단유형: ${diagnosisType || '무료진단'}`,
-    `결과: ${result || '진단 결과 확인'}`,
-    `핵심요약: ${coreItems.length ? coreItems.slice(0, 3).join(', ') : '입력 내용 및 판정 결과 확인'}`,
-  ].join('\n');
+    `진단유형: ${diagnosisType || "무료진단"}`,
+    `결과: ${result || "진단 결과 확인"}`,
+    `핵심요약: ${coreItems.length ? coreItems.slice(0, 3).join(", ") : "입력 내용 및 판정 결과 확인"}`,
+  ].join("\n");
 };
 
 const readLinkedDiagnosis = (resultId: string): LinkedDiagnosis | null => {
-  if (typeof window === 'undefined') {
+  if (typeof window === "undefined") {
     return null;
   }
 
@@ -192,7 +199,7 @@ const readLinkedDiagnosis = (resultId: string): LinkedDiagnosis | null => {
       sections.diagnosisType,
       parsed.type,
       parsed.diagnosisCode,
-      parsed.resultType
+      parsed.resultType,
     );
 
     return {
@@ -215,8 +222,8 @@ const toReservationInsertPayload = (reservation: Reservation): ReservationInsert
   preferred_time: reservation.preferredTime,
   summary: reservation.summary,
   privacy_agreed: reservation.privacyAgreed,
-  reservation_status: '접수',
-  source: 'web',
+  reservation_status: "접수",
+  source: "web",
   diagnosis_type: reservation.diagnosis_type ?? null,
   diagnosis_result_id: reservation.diagnosis_result_id ?? null,
   diagnosis_summary: reservation.diagnosis_summary ?? null,
@@ -224,9 +231,14 @@ const toReservationInsertPayload = (reservation: Reservation): ReservationInsert
 });
 
 const saveReservation = async (reservation: Reservation) => {
+  const supabase = getSupabaseClient();
+
+  if (!supabase) {
+    return false;
+  }
+
   try {
-    const { supabase } = await import('../../lib/supabase');
-    const { error } = await supabase.from('reservations').insert(toReservationInsertPayload(reservation));
+    const { error } = await supabase.from("reservations").insert(toReservationInsertPayload(reservation));
 
     if (error) {
       throw error;
@@ -234,7 +246,7 @@ const saveReservation = async (reservation: Reservation) => {
 
     return true;
   } catch (error) {
-    console.error('Failed to save reservation to Supabase:', error);
+    console.error("Failed to save reservation to Supabase:", error);
     return false;
   }
 };
@@ -242,15 +254,15 @@ const saveReservation = async (reservation: Reservation) => {
 export default function ReservationPage() {
   const [form, setForm] = useState<ReservationForm>(initialForm);
   const [linkedDiagnosis, setLinkedDiagnosis] = useState<LinkedDiagnosis | null>(null);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
 
   const linkedDiagnosisDisplay = useMemo(
-    () => linkedDiagnosis?.diagnosis_summary.split('\n').join(' / ') ?? '',
-    [linkedDiagnosis]
+    () => linkedDiagnosis?.diagnosis_summary.split("\n").join(" / ") ?? "",
+    [linkedDiagnosis],
   );
 
   useEffect(() => {
-    const resultId = new URLSearchParams(window.location.search).get('diagnosisResultId');
+    const resultId = new URLSearchParams(window.location.search).get("diagnosisResultId");
     if (!resultId) {
       return;
     }
@@ -268,8 +280,8 @@ export default function ReservationPage() {
     const nextReservation: Reservation = {
       ...form,
       id: `${Date.now()}-${crypto.randomUUID()}`,
-      status: '접수',
-      createdAt: new Date().toISOString(),
+      reservation_status: "접수",
+      created_at: new Date().toISOString(),
       diagnosis_type: linkedDiagnosis?.diagnosis_type ?? null,
       diagnosis_result_id: linkedDiagnosis?.diagnosis_result_id ?? null,
       diagnosis_summary: linkedDiagnosis?.diagnosis_summary ?? null,
@@ -277,13 +289,16 @@ export default function ReservationPage() {
     };
 
     const savedToSupabase = await saveReservation(nextReservation);
-    saveReservationToLocalStorage(nextReservation);
+
+    if (!savedToSupabase) {
+      saveReservationToLocalStorage(nextReservation);
+    }
 
     setForm(initialForm);
     setMessage(
       savedToSupabase
-        ? '상담예약이 정상적으로 접수되었습니다. 담당자가 확인 후 연락드리겠습니다.'
-        : '일시적인 서버 오류가 발생했습니다. 예약은 이 브라우저에 임시 저장되었습니다.'
+        ? "상담예약이 정상적으로 접수되었습니다. 담당자가 확인 후 연락드리겠습니다."
+        : "Supabase 연결에 실패해 예약을 브라우저 임시 저장소에 보관했습니다. 관리자 화면은 장애 시 fallback 데이터로 확인할 수 있습니다.",
     );
   };
 
@@ -306,7 +321,7 @@ export default function ReservationPage() {
           <dl className="mt-3 grid gap-3 md:grid-cols-3">
             <div>
               <dt className="font-semibold text-slate-600">진단유형</dt>
-              <dd>{linkedDiagnosis.diagnosis_type ?? '무료진단'}</dd>
+              <dd>{linkedDiagnosis.diagnosis_type ?? "무료진단"}</dd>
             </div>
             <div>
               <dt className="font-semibold text-slate-600">진단요약</dt>
@@ -327,7 +342,7 @@ export default function ReservationPage() {
             <input
               required
               value={form.name}
-              onChange={(event) => updateField('name', event.target.value)}
+              onChange={(event) => updateField("name", event.target.value)}
               className="w-full rounded-lg border border-slate-300 p-3"
               placeholder="예약자 이름"
             />
@@ -338,7 +353,7 @@ export default function ReservationPage() {
             <input
               required
               value={form.phone}
-              onChange={(event) => updateField('phone', event.target.value)}
+              onChange={(event) => updateField("phone", event.target.value)}
               className="w-full rounded-lg border border-slate-300 p-3"
               placeholder="010-0000-0000"
               type="tel"
@@ -350,7 +365,7 @@ export default function ReservationPage() {
             <select
               required
               value={form.consultationType}
-              onChange={(event) => updateField('consultationType', event.target.value)}
+              onChange={(event) => updateField("consultationType", event.target.value)}
               className="w-full rounded-lg border border-slate-300 p-3"
             >
               {consultationTypes.map((type) => (
@@ -366,7 +381,7 @@ export default function ReservationPage() {
             <select
               required
               value={form.studentRole}
-              onChange={(event) => updateField('studentRole', event.target.value)}
+              onChange={(event) => updateField("studentRole", event.target.value)}
               className="w-full rounded-lg border border-slate-300 p-3"
             >
               {studentRoles.map((role) => (
@@ -382,7 +397,7 @@ export default function ReservationPage() {
             <input
               required
               value={form.preferredDate}
-              onChange={(event) => updateField('preferredDate', event.target.value)}
+              onChange={(event) => updateField("preferredDate", event.target.value)}
               className="w-full rounded-lg border border-slate-300 p-3"
               type="date"
             />
@@ -393,7 +408,7 @@ export default function ReservationPage() {
             <input
               required
               value={form.preferredTime}
-              onChange={(event) => updateField('preferredTime', event.target.value)}
+              onChange={(event) => updateField("preferredTime", event.target.value)}
               className="w-full rounded-lg border border-slate-300 p-3"
               type="time"
             />
@@ -405,7 +420,7 @@ export default function ReservationPage() {
           <textarea
             required
             value={form.summary}
-            onChange={(event) => updateField('summary', event.target.value)}
+            onChange={(event) => updateField("summary", event.target.value)}
             className="min-h-36 w-full rounded-lg border border-slate-300 p-3"
             placeholder="상담받고 싶은 내용을 간단히 적어주세요."
           />
@@ -415,7 +430,7 @@ export default function ReservationPage() {
           <input
             required
             checked={form.privacyAgreed}
-            onChange={(event) => updateField('privacyAgreed', event.target.checked)}
+            onChange={(event) => updateField("privacyAgreed", event.target.checked)}
             className="mt-1 h-4 w-4"
             type="checkbox"
           />
