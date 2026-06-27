@@ -57,7 +57,7 @@ type ReservationInsertPayload = {
   summary: string;
   privacy_agreed: boolean;
   reservation_status: string;
-  source: string;
+  reservation_source: string;
   diagnosis_type?: string | null;
   diagnosis_result_id?: string | null;
   diagnosis_summary?: string | null;
@@ -223,18 +223,27 @@ const toReservationInsertPayload = (reservation: Reservation): ReservationInsert
   summary: reservation.summary,
   privacy_agreed: reservation.privacyAgreed,
   reservation_status: "접수",
-  source: "web",
+  reservation_source: "web",
   diagnosis_type: reservation.diagnosis_type ?? null,
   diagnosis_result_id: reservation.diagnosis_result_id ?? null,
   diagnosis_summary: reservation.diagnosis_summary ?? null,
   diagnosis_payload: reservation.diagnosis_payload ?? null,
 });
 
-const saveReservation = async (reservation: Reservation) => {
+type SaveReservationResult = {
+  ok: boolean;
+  errorMessage?: string;
+};
+
+const saveReservation = async (reservation: Reservation): Promise<SaveReservationResult> => {
   const supabase = getSupabaseClient();
 
   if (!supabase) {
-    return false;
+    return {
+      ok: false,
+      errorMessage:
+        "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY in the browser bundle.",
+    };
   }
 
   try {
@@ -244,10 +253,13 @@ const saveReservation = async (reservation: Reservation) => {
       throw error;
     }
 
-    return true;
+    return { ok: true };
   } catch (error) {
     console.error("Failed to save reservation to Supabase:", error);
-    return false;
+    return {
+      ok: false,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
   }
 };
 
@@ -288,17 +300,19 @@ export default function ReservationPage() {
       diagnosis_payload: linkedDiagnosis?.diagnosis_payload ?? null,
     };
 
-    const savedToSupabase = await saveReservation(nextReservation);
+    const saveResult = await saveReservation(nextReservation);
 
-    if (!savedToSupabase) {
+    if (!saveResult.ok) {
       saveReservationToLocalStorage(nextReservation);
     }
 
     setForm(initialForm);
     setMessage(
-      savedToSupabase
+      saveResult.ok
         ? "상담예약이 정상적으로 접수되었습니다. 담당자가 확인 후 연락드리겠습니다."
-        : "Supabase 연결에 실패해 예약을 브라우저 임시 저장소에 보관했습니다. 관리자 화면은 장애 시 fallback 데이터로 확인할 수 있습니다.",
+        : `Supabase 연결에 실패해 예약을 브라우저 임시 저장소에 보관했습니다. 오류: ${
+            saveResult.errorMessage ?? "알 수 없는 오류"
+          }`,
     );
   };
 
