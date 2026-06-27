@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { supabase } from "@/lib/supabase/client";
 
 const STORAGE_KEY = "hakpok119-reservations";
 const ADMIN_AUTH_KEY = "hakpok119-admin-auth";
@@ -48,6 +47,11 @@ const editableFields: EditableReservationField[] = [
 
 const reservationStatusOptions = ["접수", "확인중", "예약확정", "상담완료", "취소"];
 const caseStatusOptions = ["미배정", "검토중", "진행중", "보완요청", "종결"];
+
+async function getSupabaseClient() {
+  const { supabase } = await import("@/lib/supabase/client");
+  return supabase;
+}
 
 function readLocalReservations() {
   if (typeof window === "undefined") {
@@ -107,6 +111,7 @@ export default function AdminPage() {
     setMessage("");
 
     const localReservations = readLocalReservations().map(normalizeReservation);
+    const supabase = await getSupabaseClient();
 
     const { data, error } = await supabase
       .from("reservations")
@@ -172,6 +177,7 @@ export default function AdminPage() {
     setMessage("");
 
     if (reservation.id) {
+      const supabase = await getSupabaseClient();
       const { error } = await supabase.from("reservations").update(payload).eq("id", reservation.id);
 
       if (error) {
