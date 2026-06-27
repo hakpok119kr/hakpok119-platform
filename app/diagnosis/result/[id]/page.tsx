@@ -472,7 +472,7 @@ const ConsultationCta = () => (
         </div>
       </div>
       <Link
-        href="/reservation"
+        href={`/reservation?diagnosisResultId=${encodeURIComponent(params.id)}`}
         className="btn-primary inline-flex w-full justify-center px-6 py-3 text-center text-base font-black md:w-auto md:shrink-0"
       >
         무료상담 예약

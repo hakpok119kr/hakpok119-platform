@@ -1,8 +1,18 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 const STORAGE_KEY = 'hakpok119-reservations';
+const DIAGNOSIS_STORAGE_KEY_PREFIX = 'diagnosis-result';
+
+type DiagnosisPayload = Record<string, unknown>;
+
+type LinkedDiagnosis = {
+  diagnosis_type: string | null;
+  diagnosis_result_id: string;
+  diagnosis_summary: string;
+  diagnosis_payload: DiagnosisPayload;
+};
 
 const consultationTypes = ['10분 무료상담', '20분 상담', '30분 상담', '60분 상담'];
 const studentRoles = ['피해학생 측', '가해학생 측', '학부모', '기타'];
@@ -19,6 +29,10 @@ type Reservation = {
   privacyAgreed: boolean;
   status: '접수';
   createdAt: string;
+  diagnosis_type?: string | null;
+  diagnosis_result_id?: string | null;
+  diagnosis_summary?: string | null;
+  diagnosis_payload?: DiagnosisPayload | null;
 };
 
 type ReservationForm = Omit<Reservation, 'id' | 'status' | 'createdAt'>;
@@ -34,6 +48,10 @@ type ReservationInsertPayload = {
   privacy_agreed: boolean;
   reservation_status: '접수';
   source: 'web';
+  diagnosis_type?: string | null;
+  diagnosis_result_id?: string | null;
+  diagnosis_summary?: string | null;
+  diagnosis_payload?: DiagnosisPayload | null;
 };
 
 const initialForm: ReservationForm = {
@@ -66,6 +84,125 @@ const saveReservationToLocalStorage = (reservation: Reservation) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify([reservation, ...reservations]));
 };
 
+const isRecord = (value: unknown): value is DiagnosisPayload =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const toText = (value: unknown) => {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return '';
+};
+
+const compactText = (value: unknown, maxLength = 80) => {
+  const text = toText(value).replace(/\s+/g, ' ');
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+};
+
+const firstText = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = compactText(value);
+    if (text) {
+      return text;
+    }
+  }
+
+  return '';
+};
+
+const textList = (value: unknown, maxItems = 3) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => compactText(item, 36)).filter(Boolean).slice(0, maxItems);
+  }
+
+  const text = toText(value);
+  if (!text) {
+    return [];
+  }
+
+  return text
+    .split(/\n|,|ㆍ|·/)
+    .map((item) => compactText(item, 36))
+    .filter(Boolean)
+    .slice(0, maxItems);
+};
+
+const createDiagnosisSummary = (payload: DiagnosisPayload) => {
+  const sections = isRecord(payload.resultSections) ? payload.resultSections : {};
+  const inputDetails = isRecord(sections.inputDetails) ? sections.inputDetails : {};
+  const diagnosisType = firstText(
+    sections.diagnosisType,
+    payload.type,
+    payload.diagnosisCode,
+    payload.resultType
+  );
+  const result = firstText(
+    sections.diagnosisResult,
+    sections.expectedMeasure,
+    sections.riskLevel,
+    sections.appealLevel,
+    sections.possibility,
+    sections.recordRiskLevel,
+    sections.admissionImpactLevel,
+    payload.result
+  );
+  const coreItems = [
+    ...textList(sections.reasoningPoints),
+    ...textList(sections.riskFactors),
+    ...textList(sections.admissionImpactFactors),
+    compactText(inputDetails.persistence),
+    compactText(inputDetails.intentionality),
+    compactText(inputDetails.severity),
+    compactText(inputDetails.factSummary),
+  ].filter(Boolean);
+
+  return [
+    `진단유형: ${diagnosisType || '무료진단'}`,
+    `결과: ${result || '진단 결과 확인'}`,
+    `핵심요약: ${coreItems.length ? coreItems.slice(0, 3).join(', ') : '입력 내용 및 판정 결과 확인'}`,
+  ].join('\n');
+};
+
+const readLinkedDiagnosis = (resultId: string): LinkedDiagnosis | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const saved = window.sessionStorage.getItem(`${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`);
+    if (!saved) {
+      return null;
+    }
+
+    const parsed = JSON.parse(saved) as unknown;
+    if (!isRecord(parsed)) {
+      return null;
+    }
+
+    const sections = isRecord(parsed.resultSections) ? parsed.resultSections : {};
+    const diagnosisType = firstText(
+      sections.diagnosisType,
+      parsed.type,
+      parsed.diagnosisCode,
+      parsed.resultType
+    );
+
+    return {
+      diagnosis_type: diagnosisType || null,
+      diagnosis_result_id: resultId,
+      diagnosis_summary: createDiagnosisSummary(parsed),
+      diagnosis_payload: parsed,
+    };
+  } catch {
+    return null;
+  }
+};
+
 const toReservationInsertPayload = (reservation: Reservation): ReservationInsertPayload => ({
   name: reservation.name,
   phone: reservation.phone,
@@ -77,6 +214,10 @@ const toReservationInsertPayload = (reservation: Reservation): ReservationInsert
   privacy_agreed: reservation.privacyAgreed,
   reservation_status: '접수',
   source: 'web',
+  diagnosis_type: reservation.diagnosis_type ?? null,
+  diagnosis_result_id: reservation.diagnosis_result_id ?? null,
+  diagnosis_summary: reservation.diagnosis_summary ?? null,
+  diagnosis_payload: reservation.diagnosis_payload ?? null,
 });
 
 const saveReservation = async (reservation: Reservation) => {
@@ -97,7 +238,22 @@ const saveReservation = async (reservation: Reservation) => {
 
 export default function ReservationPage() {
   const [form, setForm] = useState<ReservationForm>(initialForm);
+  const [linkedDiagnosis, setLinkedDiagnosis] = useState<LinkedDiagnosis | null>(null);
   const [message, setMessage] = useState('');
+
+  const linkedDiagnosisDisplay = useMemo(
+    () => linkedDiagnosis?.diagnosis_summary.split('\n').join(' / ') ?? '',
+    [linkedDiagnosis]
+  );
+
+  useEffect(() => {
+    const resultId = new URLSearchParams(window.location.search).get('diagnosisResultId');
+    if (!resultId) {
+      return;
+    }
+
+    setLinkedDiagnosis(readLinkedDiagnosis(resultId));
+  }, []);
 
   const updateField = <K extends keyof ReservationForm>(key: K, value: ReservationForm[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -111,6 +267,10 @@ export default function ReservationPage() {
       id: `${Date.now()}-${crypto.randomUUID()}`,
       status: '접수',
       createdAt: new Date().toISOString(),
+      diagnosis_type: linkedDiagnosis?.diagnosis_type ?? null,
+      diagnosis_result_id: linkedDiagnosis?.diagnosis_result_id ?? null,
+      diagnosis_summary: linkedDiagnosis?.diagnosis_summary ?? null,
+      diagnosis_payload: linkedDiagnosis?.diagnosis_payload ?? null,
     };
 
     const savedToSupabase = await saveReservation(nextReservation);
@@ -134,6 +294,26 @@ export default function ReservationPage() {
       {message ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 font-semibold text-emerald-800">
           {message}
+        </div>
+      ) : null}
+
+      {linkedDiagnosis ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-slate-800">
+          <p className="font-bold">무료진단 결과가 상담예약과 함께 전달됩니다.</p>
+          <dl className="mt-3 grid gap-3 md:grid-cols-3">
+            <div>
+              <dt className="font-semibold text-slate-600">진단유형</dt>
+              <dd>{linkedDiagnosis.diagnosis_type ?? '무료진단'}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-600">진단요약</dt>
+              <dd>{linkedDiagnosisDisplay}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-600">결과 ID</dt>
+              <dd>{linkedDiagnosis.diagnosis_result_id}</dd>
+            </div>
+          </dl>
         </div>
       ) : null}
 
