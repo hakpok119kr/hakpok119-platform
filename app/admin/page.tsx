@@ -24,6 +24,14 @@ type Reservation = {
   admin_memo?: string;
   submitted_documents?: string;
   consultation_log?: string;
+  diagnosis_type?: string;
+  diagnosisType?: string;
+  diagnosis_result_id?: string;
+  diagnosisResultId?: string;
+  diagnosis_summary?: string;
+  diagnosisSummary?: string;
+  diagnosis_payload?: unknown;
+  diagnosisPayload?: unknown;
 };
 
 type EditableReservationField =
@@ -71,13 +79,21 @@ function writeLocalReservations(reservations: Reservation[]) {
 }
 
 function normalizeReservation(reservation: Reservation): Reservation {
-  return editableFields.reduce(
+  const normalizedEditableFields = editableFields.reduce(
     (normalized, field) => ({
       ...normalized,
       [field]: reservation[field] ?? "",
     }),
     reservation,
   );
+
+  return {
+    ...normalizedEditableFields,
+    diagnosis_type: reservation.diagnosis_type ?? reservation.diagnosisType ?? "",
+    diagnosis_result_id: reservation.diagnosis_result_id ?? reservation.diagnosisResultId ?? "",
+    diagnosis_summary: reservation.diagnosis_summary ?? reservation.diagnosisSummary ?? "",
+    diagnosis_payload: reservation.diagnosis_payload ?? reservation.diagnosisPayload ?? null,
+  };
 }
 
 export default function AdminPage() {
@@ -291,6 +307,8 @@ export default function AdminPage() {
                 <Info label="접수일" value={formatDate(selectedReservation.created_at)} />
               </div>
 
+              <DiagnosisResult reservation={selectedReservation} />
+
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="예약상태">
                   <select
@@ -393,6 +411,44 @@ export default function AdminPage() {
   );
 }
 
+function DiagnosisResult({ reservation }: { reservation: Reservation }) {
+  const diagnosisType = reservation.diagnosis_type || "";
+  const diagnosisResultId = reservation.diagnosis_result_id || "";
+  const diagnosisSummary = reservation.diagnosis_summary || "";
+  const payloadText = formatDiagnosisPayload(reservation.diagnosis_payload);
+  const hasDiagnosis = Boolean(diagnosisType || diagnosisResultId || diagnosisSummary || payloadText);
+
+  if (!hasDiagnosis) {
+    return (
+      <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+        무료진단 없이 접수된 상담예약입니다.
+      </div>
+    );
+  }
+
+  return (
+    <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <h2 className="text-sm font-black text-slate-800">연결된 무료진단 결과</h2>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <Info label="진단유형" value={diagnosisType} />
+        <Info label="진단결과 ID" value={diagnosisResultId} />
+        <Info label="진단요약" value={diagnosisSummary || "진단요약 없음"} />
+      </div>
+      {payloadText ? (
+        <details className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+          <summary className="cursor-pointer text-sm font-bold text-slate-700">
+            진단 원본 데이터 보기
+          </summary>
+          <p className="mt-2 text-xs text-slate-500">관리자 확인용 데이터입니다. 개인정보 취급에 유의해주세요.</p>
+          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-3 text-xs leading-relaxed text-slate-100">
+            {payloadText}
+          </pre>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block text-sm font-bold text-slate-700">
@@ -409,6 +465,26 @@ function Info({ label, value }: { label: string; value?: string }) {
       <p className="mt-1 text-sm text-slate-800">{value || "-"}</p>
     </div>
   );
+}
+
+function formatDiagnosisPayload(payload: unknown) {
+  if (payload === null || payload === undefined || payload === "") {
+    return "";
+  }
+
+  if (typeof payload === "string") {
+    try {
+      return JSON.stringify(JSON.parse(payload), null, 2);
+    } catch {
+      return payload;
+    }
+  }
+
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return String(payload);
+  }
 }
 
 function formatDate(value?: string) {
