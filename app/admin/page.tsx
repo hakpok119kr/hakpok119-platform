@@ -17,6 +17,7 @@ type Reservation = {
   preferred_date?: string;
   preferred_time?: string;
   content?: string;
+  summary?: string;
   reservation_status?: string;
   case_number?: string;
   case_status?: string;
@@ -53,8 +54,19 @@ const editableFields: EditableReservationField[] = [
   "consultation_log",
 ];
 
-const reservationStatusOptions = ["접수", "확인중", "예약확정", "상담완료", "취소"];
-const caseStatusOptions = ["미배정", "검토중", "진행중", "보완요청", "종결"];
+const reservationStatusOptions = ["접수", "확인중", "상담확정", "상담완료", "수임검토", "종결"];
+const caseStatusOptions = [
+  "접수",
+  "조사중",
+  "자료요청",
+  "상담완료",
+  "수임검토",
+  "수임진행",
+  "행정심판",
+  "종결",
+];
+const managerOptions = ["대표행정사", "홍길동 행정사", "김행정 행정사"];
+const diagnosisTypeOptions = ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08"];
 
 async function getSupabaseClient() {
   const { supabase } = await import("@/lib/supabase/client");
@@ -104,6 +116,74 @@ export default function AdminPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [reservationStatusFilter, setReservationStatusFilter] = useState("");
+  const [caseStatusFilter, setCaseStatusFilter] = useState("");
+  const [managerFilter, setManagerFilter] = useState("");
+  const [diagnosisTypeFilter, setDiagnosisTypeFilter] = useState("");
+
+  const filteredReservations = useMemo(() => {
+    const keyword = normalizeSearchText(searchKeyword);
+
+    return reservations.filter((reservation) => {
+      if (keyword) {
+        const searchableText = [
+          reservation.name,
+          reservation.phone,
+          reservation.case_number,
+          reservation.summary,
+          reservation.admin_memo,
+          reservation.consultation_log,
+          reservation.diagnosis_summary,
+        ]
+          .map(normalizeSearchText)
+          .join(" ");
+
+        if (!searchableText.includes(keyword)) {
+          return false;
+        }
+      }
+
+      if (
+        reservationStatusFilter &&
+        reservation.reservation_status !== reservationStatusFilter
+      ) {
+        return false;
+      }
+
+      if (caseStatusFilter && reservation.case_status !== caseStatusFilter) {
+        return false;
+      }
+
+      if (managerFilter === "미지정") {
+        if (reservation.manager?.trim()) {
+          return false;
+        }
+      } else if (managerFilter && reservation.manager !== managerFilter) {
+        return false;
+      }
+
+      if (diagnosisTypeFilter === "진단없음") {
+        if (getDiagnosisTypeCode(reservation.diagnosis_type)) {
+          return false;
+        }
+      } else if (
+        diagnosisTypeFilter &&
+        getDiagnosisTypeCode(reservation.diagnosis_type) !== diagnosisTypeFilter
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    caseStatusFilter,
+    diagnosisTypeFilter,
+    managerFilter,
+    reservationStatusFilter,
+    reservations,
+    searchKeyword,
+  ]);
 
   const selectedReservation = useMemo(
     () => reservations.find((reservation) => getReservationKey(reservation) === selectedId),
@@ -219,6 +299,14 @@ export default function AdminPage() {
     setSavingId(null);
   }
 
+  function resetFilters() {
+    setSearchKeyword("");
+    setReservationStatusFilter("");
+    setCaseStatusFilter("");
+    setManagerFilter("");
+    setDiagnosisTypeFilter("");
+  }
+
   if (!isAuthed) {
     return (
       <div className="mx-auto max-w-md">
@@ -260,12 +348,93 @@ export default function AdminPage() {
         </div>
       ) : null}
 
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.4fr)_repeat(4,minmax(140px,1fr))_auto] lg:items-end">
+          <Field label="검색">
+            <input
+              className="w-full rounded-xl border border-slate-300 p-3"
+              onChange={(event) => setSearchKeyword(event.target.value)}
+              placeholder="이름, 연락처, 사건번호, 상담요약 검색"
+              value={searchKeyword}
+            />
+          </Field>
+          <Field label="예약상태">
+            <select
+              className="w-full rounded-xl border border-slate-300 p-3"
+              onChange={(event) => setReservationStatusFilter(event.target.value)}
+              value={reservationStatusFilter}
+            >
+              <option value="">전체</option>
+              {reservationStatusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="사건상태">
+            <select
+              className="w-full rounded-xl border border-slate-300 p-3"
+              onChange={(event) => setCaseStatusFilter(event.target.value)}
+              value={caseStatusFilter}
+            >
+              <option value="">전체</option>
+              {caseStatusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="담당자">
+            <select
+              className="w-full rounded-xl border border-slate-300 p-3"
+              onChange={(event) => setManagerFilter(event.target.value)}
+              value={managerFilter}
+            >
+              <option value="">전체</option>
+              <option value="미지정">미지정</option>
+              {managerOptions.map((manager) => (
+                <option key={manager} value={manager}>
+                  {manager}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="진단유형">
+            <select
+              className="w-full rounded-xl border border-slate-300 p-3"
+              onChange={(event) => setDiagnosisTypeFilter(event.target.value)}
+              value={diagnosisTypeFilter}
+            >
+              <option value="">전체</option>
+              {diagnosisTypeOptions.map((diagnosisType) => (
+                <option key={diagnosisType} value={diagnosisType}>
+                  {diagnosisType}
+                </option>
+              ))}
+              <option value="진단없음">진단없음</option>
+            </select>
+          </Field>
+          <button className="btn-outline whitespace-nowrap" onClick={resetFilters} type="button">
+            필터 초기화
+          </button>
+        </div>
+        <p className="mt-3 text-sm font-semibold text-slate-600">
+          전체 {reservations.length}건 중 {filteredReservations.length}건 표시
+        </p>
+      </section>
+
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         <section className="space-y-3">
           {reservations.length === 0 ? (
             <div className="card text-sm text-slate-600">표시할 예약 데이터가 없습니다.</div>
+          ) : filteredReservations.length === 0 ? (
+            <div className="card text-sm text-slate-600">
+              검색 조건에 맞는 상담예약이 없습니다.
+            </div>
           ) : (
-            reservations.map((reservation) => {
+            filteredReservations.map((reservation) => {
               const key = getReservationKey(reservation);
               return (
                 <button
@@ -352,13 +521,20 @@ export default function AdminPage() {
                   </select>
                 </Field>
                 <Field label="담당자">
-                  <input
+                  <select
                     className="w-full rounded-xl border border-slate-300 p-3"
                     onChange={(event) =>
                       updateLocalField(selectedReservation, "manager", event.target.value)
                     }
                     value={selectedReservation.manager || ""}
-                  />
+                  >
+                    <option value="">미지정</option>
+                    {managerOptions.map((manager) => (
+                      <option key={manager} value={manager}>
+                        {manager}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label="제출서류">
                   <textarea
@@ -494,6 +670,15 @@ function formatDate(value?: string) {
 
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ko-KR");
+}
+
+function normalizeSearchText(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getDiagnosisTypeCode(value?: string) {
+  const match = value?.trim().toUpperCase().match(/^D0[1-8]/);
+  return match?.[0] ?? "";
 }
 
 function getReservationKey(reservation: Reservation) {
