@@ -207,29 +207,41 @@ export default function AdminPage() {
     setMessage("");
 
     const localReservations = readLocalReservations().map(normalizeReservation);
-    const supabase = await getSupabaseClient();
 
-    const { data, error } = await supabase
-      .from("reservations")
-      .select("*")
-      .order("created_at", { ascending: false });
+    try {
+      const supabase = await getSupabaseClient();
+      const { data, error } = await supabase
+        .from("reservations")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    if (error) {
+      if (error) {
+        throw error;
+      }
+
+      const nextReservations = (data ?? []).map((reservation) =>
+        normalizeReservation(reservation as Reservation),
+      );
+
+      if (nextReservations.length === 0 && localReservations.length > 0) {
+        setReservations(localReservations);
+        setSelectedId(localReservations[0] ? getReservationKey(localReservations[0]) : null);
+        return;
+      }
+
+      setReservations(nextReservations);
+      if (nextReservations.length > 0) {
+        writeLocalReservations(nextReservations);
+      }
+      setSelectedId(nextReservations[0] ? getReservationKey(nextReservations[0]) : null);
+    } catch (error) {
+      console.error("Failed to load reservations from Supabase:", error);
       setReservations(localReservations);
       setSelectedId(localReservations[0] ? getReservationKey(localReservations[0]) : null);
-      setMessage("Supabase 조회에 실패해 localStorage 백업 데이터를 표시합니다.");
+      setMessage("서버 예약정보를 불러오지 못해 브라우저 임시저장 데이터를 표시합니다.");
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    const nextReservations = (data ?? []).map((reservation) =>
-      normalizeReservation(reservation as Reservation),
-    );
-
-    setReservations(nextReservations);
-    writeLocalReservations(nextReservations);
-    setSelectedId(nextReservations[0] ? getReservationKey(nextReservations[0]) : null);
-    setIsLoading(false);
   }
 
   function handleLogin(event: FormEvent<HTMLFormElement>) {
