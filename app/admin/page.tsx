@@ -10,6 +10,7 @@ const ADMIN_PASSWORD = "119admin";
 type Reservation = {
   id?: string;
   created_at?: string;
+  createdAt?: string;
   name?: string;
   phone?: string;
   email?: string;
@@ -35,6 +36,9 @@ type Reservation = {
   diagnosisPayload?: unknown;
 };
 
+const DEFAULT_RESERVATION_STATUS = "접수";
+const DEFAULT_CASE_STATUS = "상담대기";
+
 type EditableReservationField =
   | "reservation_status"
   | "case_number"
@@ -56,6 +60,7 @@ const editableFields: EditableReservationField[] = [
 
 const reservationStatusOptions = ["접수", "확인중", "상담확정", "상담완료", "수임검토", "종결"];
 const caseStatusOptions = [
+  "상담대기",
   "접수",
   "조사중",
   "자료요청",
@@ -101,11 +106,60 @@ function normalizeReservation(reservation: Reservation): Reservation {
 
   return {
     ...normalizedEditableFields,
+    created_at: reservation.created_at ?? reservation.createdAt ?? "",
+    reservation_status: reservation.reservation_status || DEFAULT_RESERVATION_STATUS,
+    case_status: reservation.case_status || DEFAULT_CASE_STATUS,
     diagnosis_type: reservation.diagnosis_type ?? reservation.diagnosisType ?? "",
     diagnosis_result_id: reservation.diagnosis_result_id ?? reservation.diagnosisResultId ?? "",
     diagnosis_summary: reservation.diagnosis_summary ?? reservation.diagnosisSummary ?? "",
     diagnosis_payload: reservation.diagnosis_payload ?? reservation.diagnosisPayload ?? null,
   };
+}
+
+function normalizeReservations(reservations: Reservation[]) {
+  const usedCaseNumbers = new Set<string>();
+  const lastSequenceByDate = new Map<string, number>();
+
+  reservations.forEach((reservation) => {
+    const caseNumber = reservation.case_number?.trim();
+    if (!caseNumber) {
+      return;
+    }
+
+    usedCaseNumbers.add(caseNumber);
+    const match = caseNumber.match(/^HP-(\d{8})-(\d{4})$/);
+    if (match) {
+      const [, dateCode, sequence] = match;
+      lastSequenceByDate.set(
+        dateCode,
+        Math.max(lastSequenceByDate.get(dateCode) ?? 0, Number(sequence)),
+      );
+    }
+  });
+
+  return reservations.map((reservation) => {
+    const normalizedReservation = normalizeReservation(reservation);
+    if (normalizedReservation.case_number?.trim()) {
+      return normalizedReservation;
+    }
+
+    const dateCode = getCaseNumberDateCode(normalizedReservation.created_at);
+    let sequence = lastSequenceByDate.get(dateCode) ?? 0;
+    let nextCaseNumber = "";
+
+    do {
+      sequence += 1;
+      nextCaseNumber = `HP-${dateCode}-${String(sequence).padStart(4, "0")}`;
+    } while (usedCaseNumbers.has(nextCaseNumber));
+
+    usedCaseNumbers.add(nextCaseNumber);
+    lastSequenceByDate.set(dateCode, sequence);
+
+    return {
+      ...normalizedReservation,
+      case_number: nextCaseNumber,
+    };
+  });
 }
 
 export default function AdminPage() {
@@ -206,7 +260,7 @@ export default function AdminPage() {
     setIsLoading(true);
     setMessage("");
 
-    const localReservations = readLocalReservations().map(normalizeReservation);
+    const localReservations = normalizeReservations(readLocalReservations());
 
     try {
       const supabase = await getSupabaseClient();
@@ -219,13 +273,12 @@ export default function AdminPage() {
         throw error;
       }
 
-      const nextReservations = (data ?? []).map((reservation) =>
-        normalizeReservation(reservation as Reservation),
-      );
+      const nextReservations = normalizeReservations(data ?? []);
 
       if (nextReservations.length === 0 && localReservations.length > 0) {
         setReservations(localReservations);
         setSelectedId(localReservations[0] ? getReservationKey(localReservations[0]) : null);
+        writeLocalReservations(localReservations);
         return;
       }
 
@@ -238,6 +291,9 @@ export default function AdminPage() {
       console.error("Failed to load reservations from Supabase:", error);
       setReservations(localReservations);
       setSelectedId(localReservations[0] ? getReservationKey(localReservations[0]) : null);
+      if (localReservations.length > 0) {
+        writeLocalReservations(localReservations);
+      }
       setMessage("서버 예약정보를 불러오지 못해 브라우저 임시저장 데이터를 표시합니다.");
     } finally {
       setIsLoading(false);
@@ -691,6 +747,16 @@ function normalizeSearchText(value: unknown) {
 function getDiagnosisTypeCode(value?: string) {
   const match = value?.trim().toUpperCase().match(/^D0[1-8]/);
   return match?.[0] ?? "";
+}
+
+function getCaseNumberDateCode(value?: string) {
+  const date = value ? new Date(value) : new Date();
+  const validDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const year = validDate.getFullYear();
+  const month = String(validDate.getMonth() + 1).padStart(2, "0");
+  const day = String(validDate.getDate()).padStart(2, "0");
+
+  return `${year}${month}${day}`;
 }
 
 function getReservationKey(reservation: Reservation) {
