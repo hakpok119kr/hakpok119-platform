@@ -203,6 +203,7 @@ type AiCaseInsight = {
   missingItems: string[];
   priorityActions: string[];
   warnings: string[];
+  analyzedAt: string;
 };
 
 type DetailSectionKey =
@@ -2422,6 +2423,8 @@ function AiAssistantSection({
 }
 
 function AiCaseInsightDashboard({ insight }: { insight: AiCaseInsight }) {
+  const riskBadge = getRiskBadge(insight.actionRiskLevel);
+  const appealBadge = getAppealBadge(insight.appealPotential);
   const metrics = [
     { label: "AI 사건점수", suffix: "점", value: insight.caseHealthScore },
     { label: "사건완성도", suffix: "%", value: insight.caseCompleteness },
@@ -2433,15 +2436,18 @@ function AiCaseInsightDashboard({ insight }: { insight: AiCaseInsight }) {
     <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <p className="text-sm font-black text-slate-900">AI 사건분석 대시보드</p>
-          <p className="mt-1 text-xs font-semibold text-slate-500">현재 입력된 사건자료 기준 mock 분석 결과입니다.</p>
+          <p className="text-sm font-black text-slate-900">🤖 AI 사건분석</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">현재 사건자료 기준 mock 분석 결과입니다.</p>
+          {insight.analyzedAt ? (
+            <p className="mt-1 text-xs font-bold text-slate-500">최종 분석시간: {insight.analyzedAt}</p>
+          ) : null}
         </div>
         <div className="grid gap-2 text-xs font-black sm:grid-cols-2">
-          <span className={`rounded-full px-3 py-1 ${getRiskBadgeClass(insight.actionRiskLevel)}`}>
-            조치위험도: {insight.actionRiskLevel}
+          <span className={`rounded-full border px-3 py-1 ${riskBadge.className}`}>
+            {riskBadge.icon} 조치위험도: {insight.actionRiskLevel}
           </span>
-          <span className={`rounded-full px-3 py-1 ${getAppealBadgeClass(insight.appealPotential)}`}>
-            행정심판 가능성: {insight.appealPotential}
+          <span className={`rounded-full border px-3 py-1 ${appealBadge.className}`}>
+            {appealBadge.icon} 행정심판 가능성: {insight.appealPotential}
           </span>
         </div>
       </div>
@@ -3814,6 +3820,13 @@ function buildAiCaseInsight(
   return {
     actionRiskLevel,
     aiConfidence,
+    analyzedAt: new Date().toLocaleString("ko-KR", {
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }),
     appealPotential,
     caseCompleteness,
     caseHealthScore,
@@ -4002,25 +4015,25 @@ function getAppealPotential(
   return "낮음";
 }
 
-function getRiskBadgeClass(level: AiCaseInsight["actionRiskLevel"]) {
-  const classByLevel: Record<AiCaseInsight["actionRiskLevel"], string> = {
-    낮음: "bg-emerald-50 text-emerald-700",
-    보통: "bg-amber-50 text-amber-700",
-    높음: "bg-orange-50 text-orange-700",
-    매우높음: "bg-rose-50 text-rose-700",
+function getRiskBadge(level: AiCaseInsight["actionRiskLevel"]) {
+  const badgeByLevel: Record<AiCaseInsight["actionRiskLevel"], { className: string; icon: string }> = {
+    낮음: { className: "border-green-200 bg-green-50 text-green-700", icon: "🟢" },
+    보통: { className: "border-yellow-200 bg-yellow-50 text-yellow-700", icon: "🟡" },
+    높음: { className: "border-orange-200 bg-orange-50 text-orange-700", icon: "🟠" },
+    매우높음: { className: "border-red-200 bg-red-50 text-red-700", icon: "🔴" },
   };
 
-  return classByLevel[level];
+  return badgeByLevel[level] ?? { className: "border-slate-200 bg-slate-50 text-slate-700", icon: "⚪" };
 }
 
-function getAppealBadgeClass(level: AiCaseInsight["appealPotential"]) {
-  const classByLevel: Record<AiCaseInsight["appealPotential"], string> = {
-    낮음: "bg-slate-100 text-slate-600",
-    보통: "bg-amber-50 text-amber-700",
-    높음: "bg-rose-50 text-rose-700",
+function getAppealBadge(level: AiCaseInsight["appealPotential"]) {
+  const badgeByLevel: Record<AiCaseInsight["appealPotential"], { className: string; icon: string }> = {
+    낮음: { className: "border-green-200 bg-green-50 text-green-700", icon: "🟢" },
+    보통: { className: "border-yellow-200 bg-yellow-50 text-yellow-700", icon: "🟡" },
+    높음: { className: "border-red-200 bg-red-50 text-red-700", icon: "🔴" },
   };
 
-  return classByLevel[level];
+  return badgeByLevel[level] ?? { className: "border-slate-200 bg-slate-50 text-slate-700", icon: "⚪" };
 }
 
 function getGeneralizedPartyLabel(studentType?: string) {
