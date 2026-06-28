@@ -98,6 +98,13 @@ const caseTimelineSteps = [
 const caseStatusOptions = ["상담대기", ...caseTimelineSteps];
 const managerOptions = ["대표행정사", "학교폭력 행정팀", "김행정 행정사"];
 const diagnosisTypeOptions = ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08"];
+const consultationTypeOptions = ["전화", "방문", "화상", "문자", "기타"];
+
+type ConsultLogForm = {
+  consultation_type: string;
+  counselor: string;
+  content: string;
+};
 
 type ReservationFile = {
   id: string;
@@ -108,6 +115,16 @@ type ReservationFile = {
   mime_type?: string | null;
   uploaded_at: string;
   uploaded_by?: string | null;
+};
+
+type ReservationConsultLog = {
+  id: string;
+  reservation_id: string;
+  consultation_type: string;
+  content: string;
+  counselor?: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 function readLocalReservations() {
@@ -125,6 +142,14 @@ function readLocalReservations() {
 
 function writeLocalReservations(reservations: Reservation[]) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(reservations));
+}
+
+function createConsultLogForm(counselor = ""): ConsultLogForm {
+  return {
+    consultation_type: "전화",
+    counselor,
+    content: "",
+  };
 }
 
 function asText(value: unknown) {
@@ -215,7 +240,13 @@ export default function AdminPage() {
   const [caseStatusFilter, setCaseStatusFilter] = useState("");
   const [managerFilter, setManagerFilter] = useState("");
   const [diagnosisTypeFilter, setDiagnosisTypeFilter] = useState("");
-  const [newConsultationLogs, setNewConsultationLogs] = useState<Record<string, string>>({});
+  const [consultLogsByReservation, setConsultLogsByReservation] = useState<Record<string, ReservationConsultLog[]>>({});
+  const [newConsultLogForms, setNewConsultLogForms] = useState<Record<string, ConsultLogForm>>({});
+  const [editingConsultLogForms, setEditingConsultLogForms] = useState<Record<string, ConsultLogForm>>({});
+  const [loadingConsultLogsId, setLoadingConsultLogsId] = useState<string | null>(null);
+  const [savingConsultLogId, setSavingConsultLogId] = useState<string | null>(null);
+  const [editingConsultLogId, setEditingConsultLogId] = useState<string | null>(null);
+  const [deletingConsultLogId, setDeletingConsultLogId] = useState<string | null>(null);
   const [evidenceFilesByReservation, setEvidenceFilesByReservation] = useState<Record<string, ReservationFile[]>>({});
   const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<Record<string, File | null>>({});
   const [loadingEvidenceId, setLoadingEvidenceId] = useState<string | null>(null);
@@ -302,6 +333,8 @@ export default function AdminPage() {
       return;
     }
 
+    initializeNewConsultLogForm(selectedReservation);
+    void loadConsultLogs(selectedReservation.id);
     void loadEvidenceFiles(selectedReservation.id);
   }, [dataSource, selectedReservation?.id]);
 
@@ -361,41 +394,222 @@ export default function AdminPage() {
     );
   }
 
-  function updateNewConsultationLog(reservation: Reservation, value: string) {
-    const key = getReservationKey(reservation);
-    setNewConsultationLogs((current) => ({
-      ...current,
-      [key]: value,
-    }));
-  }
-
-  function appendConsultationLog(reservation: Reservation) {
-    const key = getReservationKey(reservation);
-    const newLog = newConsultationLogs[key]?.trim();
-
-    if (!newLog) {
-      setMessage("추가할 상담기록을 입력해 주세요.");
-      return;
-    }
-
-    const currentLog = asText(reservation.consultation_log).trimEnd();
-    const timestampedLog = `[${formatConsultationLogDate(new Date())}] ${newLog}`;
-    const nextLog = currentLog ? `${currentLog}\n${timestampedLog}` : timestampedLog;
-
-    updateLocalField(reservation, "consultation_log", nextLog);
-    setNewConsultationLogs((current) => ({
-      ...current,
-      [key]: "",
-    }));
-    setMessage("");
-  }
-
   function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
     const key = getReservationKey(reservation);
     setSelectedEvidenceFiles((current) => ({
       ...current,
       [key]: file ?? null,
     }));
+  }
+
+  function initializeNewConsultLogForm(reservation: Reservation) {
+    const key = getReservationKey(reservation);
+    setNewConsultLogForms((current) => {
+      if (current[key]) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [key]: createConsultLogForm(reservation.manager),
+      };
+    });
+  }
+
+  function updateNewConsultLogForm(reservation: Reservation, field: keyof ConsultLogForm, value: string) {
+    const key = getReservationKey(reservation);
+    setNewConsultLogForms((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] ?? createConsultLogForm(reservation.manager)),
+        [field]: value,
+      },
+    }));
+  }
+
+  function startEditConsultLog(log: ReservationConsultLog) {
+    setEditingConsultLogId(log.id);
+    setEditingConsultLogForms((current) => ({
+      ...current,
+      [log.id]: {
+        consultation_type: log.consultation_type || "전화",
+        counselor: log.counselor ?? "",
+        content: log.content,
+      },
+    }));
+  }
+
+  function cancelEditConsultLog(logId: string) {
+    setEditingConsultLogId(null);
+    setEditingConsultLogForms((current) => {
+      const next = { ...current };
+      delete next[logId];
+      return next;
+    });
+  }
+
+  function updateEditingConsultLogForm(logId: string, field: keyof ConsultLogForm, value: string) {
+    setEditingConsultLogForms((current) => ({
+      ...current,
+      [logId]: {
+        ...(current[logId] ?? createConsultLogForm()),
+        [field]: value,
+      },
+    }));
+  }
+
+  async function loadConsultLogs(reservationId: string) {
+    setLoadingConsultLogsId(reservationId);
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { data, error } = await supabase
+        .from("reservation_consult_logs")
+        .select("*")
+        .eq("reservation_id", reservationId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setConsultLogsByReservation((current) => ({
+        ...current,
+        [reservationId]: (data ?? []) as ReservationConsultLog[],
+      }));
+    } catch (error) {
+      console.error("Failed to load consult logs:", error);
+      setMessage("상담기록 목록을 불러오지 못했습니다.");
+    } finally {
+      setLoadingConsultLogsId(null);
+    }
+  }
+
+  async function createConsultLog(reservation: Reservation) {
+    if (!reservation.id || dataSource !== "supabase") {
+      setMessage("Supabase에 저장된 예약만 상담기록을 저장할 수 있습니다.");
+      return;
+    }
+
+    const key = getReservationKey(reservation);
+    const form = newConsultLogForms[key] ?? createConsultLogForm(reservation.manager);
+
+    if (!form.content.trim()) {
+      setMessage("상담내용을 입력해 주세요.");
+      return;
+    }
+
+    setSavingConsultLogId("new");
+    setMessage("");
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { error } = await supabase.from("reservation_consult_logs").insert({
+        reservation_id: reservation.id,
+        consultation_type: form.consultation_type || "전화",
+        counselor: form.counselor.trim() || null,
+        content: form.content.trim(),
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setNewConsultLogForms((current) => ({
+        ...current,
+        [key]: createConsultLogForm(reservation.manager),
+      }));
+      await loadConsultLogs(reservation.id);
+      setMessage("상담기록이 저장되었습니다.");
+    } catch (error) {
+      console.error("Failed to create consult log:", error);
+      setMessage("상담기록 저장에 실패했습니다.");
+    } finally {
+      setSavingConsultLogId(null);
+    }
+  }
+
+  async function updateConsultLog(log: ReservationConsultLog) {
+    const form = editingConsultLogForms[log.id];
+
+    if (!form?.content.trim()) {
+      setMessage("상담내용을 입력해 주세요.");
+      return;
+    }
+
+    setSavingConsultLogId(log.id);
+    setMessage("");
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { error } = await supabase
+        .from("reservation_consult_logs")
+        .update({
+          consultation_type: form.consultation_type || "전화",
+          counselor: form.counselor.trim() || null,
+          content: form.content.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", log.id);
+
+      if (error) {
+        throw error;
+      }
+
+      cancelEditConsultLog(log.id);
+      await loadConsultLogs(log.reservation_id);
+      setMessage("상담기록이 수정되었습니다.");
+    } catch (error) {
+      console.error("Failed to update consult log:", error);
+      setMessage("상담기록 수정에 실패했습니다.");
+    } finally {
+      setSavingConsultLogId(null);
+    }
+  }
+
+  async function deleteConsultLog(log: ReservationConsultLog) {
+    if (!window.confirm("상담기록을 삭제하시겠습니까?")) {
+      return;
+    }
+
+    setDeletingConsultLogId(log.id);
+    setMessage("");
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { error } = await supabase.from("reservation_consult_logs").delete().eq("id", log.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setConsultLogsByReservation((current) => ({
+        ...current,
+        [log.reservation_id]: (current[log.reservation_id] ?? []).filter((item) => item.id !== log.id),
+      }));
+      setMessage("상담기록이 삭제되었습니다.");
+    } catch (error) {
+      console.error("Failed to delete consult log:", error);
+      setMessage("상담기록 삭제에 실패했습니다.");
+    } finally {
+      setDeletingConsultLogId(null);
+    }
   }
 
   async function loadEvidenceFiles(reservationId: string) {
@@ -858,11 +1072,25 @@ export default function AdminPage() {
 
               <DiagnosisResult reservation={selectedReservation} />
               <ConsultationLogSection
-                newLog={newConsultationLogs[getReservationKey(selectedReservation)] || ""}
-                onAppendLog={() => appendConsultationLog(selectedReservation)}
-                onChangeLog={(value) => updateLocalField(selectedReservation, "consultation_log", value)}
-                onChangeNewLog={(value) => updateNewConsultationLog(selectedReservation, value)}
+                deletingLogId={deletingConsultLogId}
+                editingLogForms={editingConsultLogForms}
+                editingLogId={editingConsultLogId}
+                isLoading={loadingConsultLogsId === selectedReservation.id}
+                isSupabaseReservation={dataSource === "supabase" && Boolean(selectedReservation.id)}
+                logs={selectedReservation.id ? consultLogsByReservation[selectedReservation.id] ?? [] : []}
+                newLogForm={
+                  newConsultLogForms[getReservationKey(selectedReservation)] ??
+                  createConsultLogForm(selectedReservation.manager)
+                }
+                onCancelEdit={cancelEditConsultLog}
+                onChangeEdit={updateEditingConsultLogForm}
+                onChangeNew={(field, value) => updateNewConsultLogForm(selectedReservation, field, value)}
+                onCreate={() => createConsultLog(selectedReservation)}
+                onDelete={deleteConsultLog}
+                onStartEdit={startEditConsultLog}
+                onUpdate={updateConsultLog}
                 reservation={selectedReservation}
+                savingLogId={savingConsultLogId}
               />
               <CaseTimeline caseStatus={selectedReservation.case_status} />
               <EvidenceFilesSection
@@ -904,45 +1132,223 @@ export default function AdminPage() {
 }
 
 function ConsultationLogSection({
-  newLog,
-  onAppendLog,
-  onChangeLog,
-  onChangeNewLog,
+  deletingLogId,
+  editingLogForms,
+  editingLogId,
+  isLoading,
+  isSupabaseReservation,
+  logs,
+  newLogForm,
+  onCancelEdit,
+  onChangeEdit,
+  onChangeNew,
+  onCreate,
+  onDelete,
+  onStartEdit,
+  onUpdate,
   reservation,
+  savingLogId,
 }: {
-  newLog: string;
-  onAppendLog: () => void;
-  onChangeLog: (value: string) => void;
-  onChangeNewLog: (value: string) => void;
+  deletingLogId: string | null;
+  editingLogForms: Record<string, ConsultLogForm>;
+  editingLogId: string | null;
+  isLoading: boolean;
+  isSupabaseReservation: boolean;
+  logs: ReservationConsultLog[];
+  newLogForm: ConsultLogForm;
+  onCancelEdit: (logId: string) => void;
+  onChangeEdit: (logId: string, field: keyof ConsultLogForm, value: string) => void;
+  onChangeNew: (field: keyof ConsultLogForm, value: string) => void;
+  onCreate: () => void;
+  onDelete: (log: ReservationConsultLog) => void;
+  onStartEdit: (log: ReservationConsultLog) => void;
+  onUpdate: (log: ReservationConsultLog) => void;
   reservation: Reservation;
+  savingLogId: string | null;
 }) {
+  const legacyLog = asText(reservation.consultation_log).trim();
+
   return (
     <section className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <h2 className="text-sm font-black text-slate-800">상담기록</h2>
-      <div className="mt-3 space-y-4">
-        <Field label="상담기록">
-          <textarea
-            className="min-h-28 w-full rounded-xl border border-slate-300 p-3"
-            onChange={(event) => onChangeLog(event.target.value)}
-            value={reservation.consultation_log || ""}
-          />
-        </Field>
-        <Field label="새 상담기록">
-          <div className="space-y-2">
-            <textarea
-              className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
-              onChange={(event) => onChangeNewLog(event.target.value)}
-              placeholder="새로 추가할 상담기록을 입력해 주세요."
-              value={newLog}
-            />
-            <div className="flex justify-end">
-              <button className="btn-outline" onClick={onAppendLog} type="button">
-                상담기록 추가
-              </button>
-            </div>
-          </div>
-        </Field>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-sm font-black text-slate-800">상담기록 ({logs.length}건)</h2>
+        <p className="text-xs font-bold text-slate-500">최신 상담기록이 위에 표시됩니다.</p>
       </div>
+
+      {legacyLog ? (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-xs font-black text-amber-700">기존 상담기록</p>
+          <pre className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-amber-900">
+            {legacyLog}
+          </pre>
+        </div>
+      ) : null}
+
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-black text-slate-800">새 상담기록 입력</h3>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <Field label="상담유형">
+            <select
+              className="w-full rounded-xl border border-slate-300 p-3"
+              disabled={!isSupabaseReservation || savingLogId === "new"}
+              onChange={(event) => onChangeNew("consultation_type", event.target.value)}
+              value={newLogForm.consultation_type}
+            >
+              {consultationTypeOptions.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="담당자">
+            <input
+              className="w-full rounded-xl border border-slate-300 p-3"
+              disabled={!isSupabaseReservation || savingLogId === "new"}
+              onChange={(event) => onChangeNew("counselor", event.target.value)}
+              value={newLogForm.counselor}
+            />
+          </Field>
+          <div className="md:col-span-2">
+            <Field label="상담내용">
+              <textarea
+                className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
+                disabled={!isSupabaseReservation || savingLogId === "new"}
+                onChange={(event) => onChangeNew("content", event.target.value)}
+                value={newLogForm.content}
+              />
+            </Field>
+          </div>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <button
+            className="btn-primary"
+            disabled={!isSupabaseReservation || savingLogId === "new" || !newLogForm.content.trim()}
+            onClick={onCreate}
+            type="button"
+          >
+            {savingLogId === "new" ? "저장 중" : "상담기록 저장"}
+          </button>
+        </div>
+        {!isSupabaseReservation ? (
+          <p className="mt-3 text-xs font-semibold text-slate-500">
+            Supabase에 저장된 예약에서만 새 상담기록을 저장할 수 있습니다.
+          </p>
+        ) : null}
+      </div>
+
+      {isLoading ? (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
+          상담기록을 불러오는 중입니다.
+        </p>
+      ) : logs.length === 0 ? (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
+          등록된 상담기록이 없습니다.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {logs.map((log, index) => {
+            const isEditing = editingLogId === log.id;
+            const editForm = editingLogForms[log.id] ?? {
+              consultation_type: log.consultation_type || "전화",
+              counselor: log.counselor ?? "",
+              content: log.content,
+            };
+
+            return (
+              <article className="rounded-xl border border-slate-200 bg-white p-4" key={log.id}>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-800">상담 #{logs.length - index}</h3>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">{formatDate(log.created_at)}</p>
+                  </div>
+                  {!isEditing ? (
+                    <div className="flex gap-2">
+                      <button className="btn-outline px-3 py-2 text-xs" onClick={() => onStartEdit(log)} type="button">
+                        수정
+                      </button>
+                      <button
+                        className="btn-outline px-3 py-2 text-xs"
+                        disabled={deletingLogId === log.id}
+                        onClick={() => onDelete(log)}
+                        type="button"
+                      >
+                        {deletingLogId === log.id ? "삭제 중" : "삭제"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {isEditing ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <Field label="상담유형">
+                      <select
+                        className="w-full rounded-xl border border-slate-300 p-3"
+                        disabled={savingLogId === log.id}
+                        onChange={(event) => onChangeEdit(log.id, "consultation_type", event.target.value)}
+                        value={editForm.consultation_type}
+                      >
+                        {consultationTypeOptions.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="담당자">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 p-3"
+                        disabled={savingLogId === log.id}
+                        onChange={(event) => onChangeEdit(log.id, "counselor", event.target.value)}
+                        value={editForm.counselor}
+                      />
+                    </Field>
+                    <div className="md:col-span-2">
+                      <Field label="상담내용">
+                        <textarea
+                          className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
+                          disabled={savingLogId === log.id}
+                          onChange={(event) => onChangeEdit(log.id, "content", event.target.value)}
+                          value={editForm.content}
+                        />
+                      </Field>
+                    </div>
+                    <div className="flex justify-end gap-2 md:col-span-2">
+                      <button className="btn-outline" onClick={() => onCancelEdit(log.id)} type="button">
+                        취소
+                      </button>
+                      <button
+                        className="btn-primary"
+                        disabled={savingLogId === log.id || !editForm.content.trim()}
+                        onClick={() => onUpdate(log)}
+                        type="button"
+                      >
+                        {savingLogId === log.id ? "저장 중" : "저장"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <dl className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+                      <div>
+                        <dt className="text-xs font-bold text-slate-500">유형</dt>
+                        <dd className="mt-1 font-semibold text-slate-800">{log.consultation_type || "전화"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-bold text-slate-500">담당</dt>
+                        <dd className="mt-1 font-semibold text-slate-800">{log.counselor || "-"}</dd>
+                      </div>
+                    </dl>
+                    <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-700">
+                      {log.content}
+                    </p>
+                  </>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
