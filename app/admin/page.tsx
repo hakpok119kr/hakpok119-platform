@@ -99,11 +99,37 @@ const caseStatusOptions = ["상담대기", ...caseTimelineSteps];
 const managerOptions = ["대표행정사", "학교폭력 행정팀", "김행정 행정사"];
 const diagnosisTypeOptions = ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08"];
 const consultationTypeOptions = ["전화", "방문", "화상", "문자", "기타"];
+const eventTypeOptions = [
+  "상담예약",
+  "전화상담",
+  "방문상담",
+  "화상상담",
+  "자료요청",
+  "자료제출",
+  "의견서 작성",
+  "의견서 제출",
+  "학폭위 개최",
+  "조치결정",
+  "행정심판 검토",
+  "행정심판 청구",
+  "종결",
+  "기타",
+];
 
 type ConsultLogForm = {
   consultation_type: string;
   counselor: string;
   content: string;
+};
+
+type ReservationEventForm = {
+  event_type: string;
+  title: string;
+  event_date: string;
+  event_time: string;
+  counselor: string;
+  memo: string;
+  completed: boolean;
 };
 
 type ReservationFile = {
@@ -123,6 +149,20 @@ type ReservationConsultLog = {
   consultation_type: string;
   content: string;
   counselor?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ReservationEvent = {
+  id: string;
+  reservation_id: string;
+  event_type: string;
+  title: string;
+  event_date: string;
+  event_time?: string | null;
+  counselor?: string | null;
+  memo?: string | null;
+  completed: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -149,6 +189,18 @@ function createConsultLogForm(counselor = ""): ConsultLogForm {
     consultation_type: "전화",
     counselor,
     content: "",
+  };
+}
+
+function createReservationEventForm(counselor = ""): ReservationEventForm {
+  return {
+    event_type: "상담예약",
+    title: "",
+    event_date: "",
+    event_time: "",
+    counselor,
+    memo: "",
+    completed: false,
   };
 }
 
@@ -247,6 +299,14 @@ export default function AdminPage() {
   const [savingConsultLogId, setSavingConsultLogId] = useState<string | null>(null);
   const [editingConsultLogId, setEditingConsultLogId] = useState<string | null>(null);
   const [deletingConsultLogId, setDeletingConsultLogId] = useState<string | null>(null);
+  const [eventsByReservation, setEventsByReservation] = useState<Record<string, ReservationEvent[]>>({});
+  const [newEventForms, setNewEventForms] = useState<Record<string, ReservationEventForm>>({});
+  const [editingEventForms, setEditingEventForms] = useState<Record<string, ReservationEventForm>>({});
+  const [eventCounselorFilters, setEventCounselorFilters] = useState<Record<string, string>>({});
+  const [loadingEventsId, setLoadingEventsId] = useState<string | null>(null);
+  const [savingEventId, setSavingEventId] = useState<string | null>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
   const [evidenceFilesByReservation, setEvidenceFilesByReservation] = useState<Record<string, ReservationFile[]>>({});
   const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<Record<string, File | null>>({});
   const [loadingEvidenceId, setLoadingEvidenceId] = useState<string | null>(null);
@@ -334,7 +394,9 @@ export default function AdminPage() {
     }
 
     initializeNewConsultLogForm(selectedReservation);
+    initializeNewEventForm(selectedReservation);
     void loadConsultLogs(selectedReservation.id);
+    void loadReservationEvents(selectedReservation.id);
     void loadEvidenceFiles(selectedReservation.id);
   }, [dataSource, selectedReservation?.id]);
 
@@ -660,6 +722,276 @@ export default function AdminPage() {
       setMessage("상담기록 삭제에 실패했습니다.");
     } finally {
       setDeletingConsultLogId(null);
+    }
+  }
+
+  function initializeNewEventForm(reservation: Reservation) {
+    const key = getReservationKey(reservation);
+    setNewEventForms((current) => {
+      if (current[key]) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [key]: createReservationEventForm(reservation.manager),
+      };
+    });
+  }
+
+  function updateNewEventForm(reservation: Reservation, field: keyof ReservationEventForm, value: string | boolean) {
+    const key = getReservationKey(reservation);
+    setNewEventForms((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] ?? createReservationEventForm(reservation.manager)),
+        [field]: value,
+      },
+    }));
+  }
+
+  function startEditEvent(event: ReservationEvent) {
+    setEditingEventId(event.id);
+    setEditingEventForms((current) => ({
+      ...current,
+      [event.id]: {
+        event_type: event.event_type,
+        title: event.title,
+        event_date: event.event_date,
+        event_time: event.event_time ?? "",
+        counselor: event.counselor ?? "",
+        memo: event.memo ?? "",
+        completed: event.completed,
+      },
+    }));
+  }
+
+  function cancelEditEvent(eventId: string) {
+    setEditingEventId(null);
+    setEditingEventForms((current) => {
+      const next = { ...current };
+      delete next[eventId];
+      return next;
+    });
+  }
+
+  function updateEditingEventForm(eventId: string, field: keyof ReservationEventForm, value: string | boolean) {
+    setEditingEventForms((current) => ({
+      ...current,
+      [eventId]: {
+        ...(current[eventId] ?? createReservationEventForm()),
+        [field]: value,
+      },
+    }));
+  }
+
+  function updateEventCounselorFilter(reservation: Reservation, value: string) {
+    setEventCounselorFilters((current) => ({
+      ...current,
+      [getReservationKey(reservation)]: value,
+    }));
+  }
+
+  async function loadReservationEvents(reservationId: string) {
+    setLoadingEventsId(reservationId);
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { data, error } = await supabase
+        .from("reservation_events")
+        .select("*")
+        .eq("reservation_id", reservationId)
+        .order("completed", { ascending: true })
+        .order("event_date", { ascending: true })
+        .order("event_time", { ascending: true });
+
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+
+      setEventsByReservation((current) => ({
+        ...current,
+        [reservationId]: (data ?? []) as ReservationEvent[],
+      }));
+    } catch (error) {
+      console.error("Failed to load reservation events:", error);
+      setMessage(`사건 일정 조회 실패: ${getSupabaseErrorMessage(error)}`);
+    } finally {
+      setLoadingEventsId(null);
+    }
+  }
+
+  async function createReservationEvent(reservation: Reservation) {
+    const reservationId = reservation.id;
+
+    if (!reservationId || dataSource !== "supabase" || !isUuid(reservationId)) {
+      setMessage("Supabase에 저장된 예약만 사건 일정을 저장할 수 있습니다.");
+      return;
+    }
+
+    const key = getReservationKey(reservation);
+    const form = newEventForms[key] ?? createReservationEventForm(reservation.manager);
+
+    if (!form.event_type || !form.title.trim() || !form.event_date) {
+      setMessage("일정유형, 일정제목, 일정일자를 입력해 주세요.");
+      return;
+    }
+
+    setSavingEventId("new");
+    setMessage("");
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { error } = await supabase.from("reservation_events").insert({
+        reservation_id: reservationId,
+        event_type: form.event_type,
+        title: form.title.trim(),
+        event_date: form.event_date,
+        event_time: form.event_time.trim() || null,
+        counselor: form.counselor.trim() || null,
+        memo: form.memo.trim() || null,
+        completed: false,
+      });
+
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+
+      setNewEventForms((current) => ({
+        ...current,
+        [key]: createReservationEventForm(reservation.manager),
+      }));
+      await loadReservationEvents(reservationId);
+      setMessage("사건 일정이 저장되었습니다.");
+    } catch (error) {
+      console.error("Failed to create reservation event:", error);
+      setMessage(`사건 일정 저장 실패: ${getSupabaseErrorMessage(error)}`);
+    } finally {
+      setSavingEventId(null);
+    }
+  }
+
+  async function updateReservationEvent(event: ReservationEvent) {
+    const form = editingEventForms[event.id];
+
+    if (!form?.event_type || !form.title.trim() || !form.event_date) {
+      setMessage("일정유형, 일정제목, 일정일자를 입력해 주세요.");
+      return;
+    }
+
+    setSavingEventId(event.id);
+    setMessage("");
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { error } = await supabase
+        .from("reservation_events")
+        .update({
+          event_type: form.event_type,
+          title: form.title.trim(),
+          event_date: form.event_date,
+          event_time: form.event_time.trim() || null,
+          counselor: form.counselor.trim() || null,
+          memo: form.memo.trim() || null,
+          completed: form.completed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", event.id);
+
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+
+      cancelEditEvent(event.id);
+      await loadReservationEvents(event.reservation_id);
+      setMessage("사건 일정이 수정되었습니다.");
+    } catch (error) {
+      console.error("Failed to update reservation event:", error);
+      setMessage(`사건 일정 수정 실패: ${getSupabaseErrorMessage(error)}`);
+    } finally {
+      setSavingEventId(null);
+    }
+  }
+
+  async function toggleReservationEventCompleted(event: ReservationEvent) {
+    setSavingEventId(event.id);
+    setMessage("");
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { error } = await supabase
+        .from("reservation_events")
+        .update({
+          completed: !event.completed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", event.id);
+
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+
+      await loadReservationEvents(event.reservation_id);
+      setMessage(event.completed ? "사건 일정 완료가 취소되었습니다." : "사건 일정이 완료 처리되었습니다.");
+    } catch (error) {
+      console.error("Failed to toggle reservation event:", error);
+      setMessage(`사건 일정 완료 처리 실패: ${getSupabaseErrorMessage(error)}`);
+    } finally {
+      setSavingEventId(null);
+    }
+  }
+
+  async function deleteReservationEvent(event: ReservationEvent) {
+    if (!window.confirm("일정을 삭제하시겠습니까?")) {
+      return;
+    }
+
+    setDeletingEventId(event.id);
+    setMessage("");
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { error } = await supabase.from("reservation_events").delete().eq("id", event.id);
+
+      if (error) {
+        console.error(error);
+        throw error;
+      }
+
+      setEventsByReservation((current) => ({
+        ...current,
+        [event.reservation_id]: (current[event.reservation_id] ?? []).filter((item) => item.id !== event.id),
+      }));
+      setMessage("사건 일정이 삭제되었습니다.");
+    } catch (error) {
+      console.error("Failed to delete reservation event:", error);
+      setMessage(`사건 일정 삭제 실패: ${getSupabaseErrorMessage(error)}`);
+    } finally {
+      setDeletingEventId(null);
     }
   }
 
@@ -1144,6 +1476,30 @@ export default function AdminPage() {
                 savingLogId={savingConsultLogId}
               />
               <CaseTimeline caseStatus={selectedReservation.case_status} />
+              <ReservationEventsSection
+                counselorFilter={eventCounselorFilters[getReservationKey(selectedReservation)] ?? ""}
+                deletingEventId={deletingEventId}
+                editingEventForms={editingEventForms}
+                editingEventId={editingEventId}
+                events={selectedReservation.id ? eventsByReservation[selectedReservation.id] ?? [] : []}
+                isLoading={loadingEventsId === selectedReservation.id}
+                isSupabaseReservation={dataSource === "supabase" && isUuid(selectedReservation.id)}
+                newEventForm={
+                  newEventForms[getReservationKey(selectedReservation)] ??
+                  createReservationEventForm(selectedReservation.manager)
+                }
+                onCancelEdit={cancelEditEvent}
+                onChangeEdit={updateEditingEventForm}
+                onChangeFilter={(value) => updateEventCounselorFilter(selectedReservation, value)}
+                onChangeNew={(field, value) => updateNewEventForm(selectedReservation, field, value)}
+                onCreate={() => createReservationEvent(selectedReservation)}
+                onDelete={deleteReservationEvent}
+                onStartEdit={startEditEvent}
+                onToggleComplete={toggleReservationEventCompleted}
+                onUpdate={updateReservationEvent}
+                reservationName={selectedReservation.name || "이름 없음"}
+                savingEventId={savingEventId}
+              />
               <EvidenceFilesSection
                 deletingFileId={deletingEvidenceFileId}
                 files={selectedReservation.id ? evidenceFilesByReservation[selectedReservation.id] ?? [] : []}
@@ -1456,6 +1812,334 @@ function CaseTimeline({ caseStatus }: { caseStatus?: string }) {
   );
 }
 
+function ReservationEventsSection({
+  counselorFilter,
+  deletingEventId,
+  editingEventForms,
+  editingEventId,
+  events,
+  isLoading,
+  isSupabaseReservation,
+  newEventForm,
+  onCancelEdit,
+  onChangeEdit,
+  onChangeFilter,
+  onChangeNew,
+  onCreate,
+  onDelete,
+  onStartEdit,
+  onToggleComplete,
+  onUpdate,
+  reservationName,
+  savingEventId,
+}: {
+  counselorFilter: string;
+  deletingEventId: string | null;
+  editingEventForms: Record<string, ReservationEventForm>;
+  editingEventId: string | null;
+  events: ReservationEvent[];
+  isLoading: boolean;
+  isSupabaseReservation: boolean;
+  newEventForm: ReservationEventForm;
+  onCancelEdit: (eventId: string) => void;
+  onChangeEdit: (eventId: string, field: keyof ReservationEventForm, value: string | boolean) => void;
+  onChangeFilter: (value: string) => void;
+  onChangeNew: (field: keyof ReservationEventForm, value: string | boolean) => void;
+  onCreate: () => void;
+  onDelete: (event: ReservationEvent) => void;
+  onStartEdit: (event: ReservationEvent) => void;
+  onToggleComplete: (event: ReservationEvent) => void;
+  onUpdate: (event: ReservationEvent) => void;
+  reservationName: string;
+  savingEventId: string | null;
+}) {
+  const sortedEvents = sortReservationEvents(events);
+  const counselorOptions = getEventCounselorOptions(events);
+  const visibleEvents = counselorFilter
+    ? sortedEvents.filter((event) => (event.counselor || "") === counselorFilter)
+    : sortedEvents;
+  const upcomingEvents = getUpcomingReservationEvents(events);
+
+  return (
+    <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-sm font-black text-slate-800">사건 일정 ({events.length}건)</h2>
+        <select
+          className="rounded-xl border border-slate-300 bg-white p-2 text-sm font-semibold text-slate-700"
+          onChange={(event) => onChangeFilter(event.target.value)}
+          value={counselorFilter}
+        >
+          <option value="">전체</option>
+          {counselorOptions.map((counselor) => (
+            <option key={counselor} value={counselor}>
+              {counselor}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-black text-slate-800">다가오는 일정</h3>
+        {upcomingEvents.length === 0 ? (
+          <p className="mt-3 text-sm font-semibold text-slate-500">다가오는 미완료 일정이 없습니다.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {upcomingEvents.map((event) => (
+              <li className="text-sm font-semibold text-slate-700" key={event.id}>
+                {formatEventDateTime(event)} {event.event_type} / {reservationName} / {event.counselor || "-"}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-black text-slate-800">새 일정 입력</h3>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <Field label="일정유형">
+            <select
+              className="w-full rounded-xl border border-slate-300 p-3"
+              disabled={!isSupabaseReservation || savingEventId === "new"}
+              onChange={(event) => onChangeNew("event_type", event.target.value)}
+              value={newEventForm.event_type}
+            >
+              {eventTypeOptions.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="일정제목">
+            <input
+              className="w-full rounded-xl border border-slate-300 p-3"
+              disabled={!isSupabaseReservation || savingEventId === "new"}
+              onChange={(event) => onChangeNew("title", event.target.value)}
+              value={newEventForm.title}
+            />
+          </Field>
+          <Field label="일정일자">
+            <input
+              className="w-full rounded-xl border border-slate-300 p-3"
+              disabled={!isSupabaseReservation || savingEventId === "new"}
+              onChange={(event) => onChangeNew("event_date", event.target.value)}
+              type="date"
+              value={newEventForm.event_date}
+            />
+          </Field>
+          <Field label="일정시간">
+            <input
+              className="w-full rounded-xl border border-slate-300 p-3"
+              disabled={!isSupabaseReservation || savingEventId === "new"}
+              onChange={(event) => onChangeNew("event_time", event.target.value)}
+              type="time"
+              value={newEventForm.event_time}
+            />
+          </Field>
+          <Field label="담당자">
+            <input
+              className="w-full rounded-xl border border-slate-300 p-3"
+              disabled={!isSupabaseReservation || savingEventId === "new"}
+              onChange={(event) => onChangeNew("counselor", event.target.value)}
+              value={newEventForm.counselor}
+            />
+          </Field>
+          <div className="md:col-span-2">
+            <Field label="메모">
+              <textarea
+                className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
+                disabled={!isSupabaseReservation || savingEventId === "new"}
+                onChange={(event) => onChangeNew("memo", event.target.value)}
+                value={newEventForm.memo}
+              />
+            </Field>
+          </div>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <button
+            className="btn-primary"
+            disabled={
+              !isSupabaseReservation ||
+              savingEventId === "new" ||
+              !newEventForm.event_type ||
+              !newEventForm.title.trim() ||
+              !newEventForm.event_date
+            }
+            onClick={onCreate}
+            type="button"
+          >
+            {savingEventId === "new" ? "저장 중" : "일정 저장"}
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
+          사건 일정을 불러오는 중입니다.
+        </p>
+      ) : visibleEvents.length === 0 ? (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
+          표시할 사건 일정이 없습니다.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {visibleEvents.map((event) => {
+            const isEditing = editingEventId === event.id;
+            const editForm = editingEventForms[event.id] ?? {
+              event_type: event.event_type,
+              title: event.title,
+              event_date: event.event_date,
+              event_time: event.event_time ?? "",
+              counselor: event.counselor ?? "",
+              memo: event.memo ?? "",
+              completed: event.completed,
+            };
+
+            return (
+              <article
+                className={`rounded-xl border p-4 ${event.completed ? "border-slate-200 bg-slate-100 text-slate-500" : "border-slate-200 bg-white text-slate-800"}`}
+                key={event.id}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black text-slate-500">{event.event_type}</p>
+                    <h3 className="mt-1 text-base font-black">{event.title}</h3>
+                    <p className="mt-1 text-sm font-semibold">{formatEventDateTime(event)}</p>
+                  </div>
+                  {!isEditing ? (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="btn-outline px-3 py-1.5 text-xs"
+                        disabled={savingEventId === event.id}
+                        onClick={() => onToggleComplete(event)}
+                        type="button"
+                      >
+                        {event.completed ? "완료 취소" : "완료"}
+                      </button>
+                      <button className="btn-outline px-3 py-1.5 text-xs" onClick={() => onStartEdit(event)} type="button">
+                        수정
+                      </button>
+                      <button
+                        className="btn-outline px-3 py-1.5 text-xs"
+                        disabled={deletingEventId === event.id}
+                        onClick={() => onDelete(event)}
+                        type="button"
+                      >
+                        {deletingEventId === event.id ? "삭제 중" : "삭제"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {isEditing ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <Field label="일정유형">
+                      <select
+                        className="w-full rounded-xl border border-slate-300 p-3"
+                        disabled={savingEventId === event.id}
+                        onChange={(changeEvent) => onChangeEdit(event.id, "event_type", changeEvent.target.value)}
+                        value={editForm.event_type}
+                      >
+                        {eventTypeOptions.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="일정제목">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 p-3"
+                        disabled={savingEventId === event.id}
+                        onChange={(changeEvent) => onChangeEdit(event.id, "title", changeEvent.target.value)}
+                        value={editForm.title}
+                      />
+                    </Field>
+                    <Field label="일정일자">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 p-3"
+                        disabled={savingEventId === event.id}
+                        onChange={(changeEvent) => onChangeEdit(event.id, "event_date", changeEvent.target.value)}
+                        type="date"
+                        value={editForm.event_date}
+                      />
+                    </Field>
+                    <Field label="일정시간">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 p-3"
+                        disabled={savingEventId === event.id}
+                        onChange={(changeEvent) => onChangeEdit(event.id, "event_time", changeEvent.target.value)}
+                        type="time"
+                        value={editForm.event_time}
+                      />
+                    </Field>
+                    <Field label="담당자">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 p-3"
+                        disabled={savingEventId === event.id}
+                        onChange={(changeEvent) => onChangeEdit(event.id, "counselor", changeEvent.target.value)}
+                        value={editForm.counselor}
+                      />
+                    </Field>
+                    <label className="mt-7 flex items-center gap-2 text-sm font-bold text-slate-700">
+                      <input
+                        checked={editForm.completed}
+                        disabled={savingEventId === event.id}
+                        onChange={(changeEvent) => onChangeEdit(event.id, "completed", changeEvent.target.checked)}
+                        type="checkbox"
+                      />
+                      완료
+                    </label>
+                    <div className="md:col-span-2">
+                      <Field label="메모">
+                        <textarea
+                          className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
+                          disabled={savingEventId === event.id}
+                          onChange={(changeEvent) => onChangeEdit(event.id, "memo", changeEvent.target.value)}
+                          value={editForm.memo}
+                        />
+                      </Field>
+                    </div>
+                    <div className="flex justify-end gap-2 md:col-span-2">
+                      <button className="btn-outline" onClick={() => onCancelEdit(event.id)} type="button">
+                        취소
+                      </button>
+                      <button
+                        className="btn-primary"
+                        disabled={savingEventId === event.id || !editForm.event_type || !editForm.title.trim() || !editForm.event_date}
+                        onClick={() => onUpdate(event)}
+                        type="button"
+                      >
+                        {savingEventId === event.id ? "저장 중" : "저장"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    <dl className="grid gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2">
+                      <div className="flex gap-2">
+                        <dt className="shrink-0 font-black text-slate-500">담당:</dt>
+                        <dd className="break-words font-semibold">{event.counselor || "-"}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="shrink-0 font-black text-slate-500">완료:</dt>
+                        <dd className="font-semibold">{event.completed ? "완료" : "미완료"}</dd>
+                      </div>
+                    </dl>
+                    {event.memo ? (
+                      <p className="whitespace-pre-wrap break-words text-sm leading-7">{event.memo}</p>
+                    ) : null}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function EvidenceFilesSection({
   deletingFileId,
   files,
@@ -1684,6 +2368,38 @@ function formatFileSize(bytes: number) {
   const value = bytes / 1024 ** unitIndex;
 
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatEventDateTime(event: Pick<ReservationEvent, "event_date" | "event_time">) {
+  return [event.event_date, event.event_time].filter(Boolean).join(" ");
+}
+
+function getEventComparableTime(event: ReservationEvent) {
+  return new Date(`${event.event_date}T${event.event_time || "00:00"}`).getTime();
+}
+
+function sortReservationEvents(events: ReservationEvent[]) {
+  return [...events].sort((first, second) => {
+    if (first.completed !== second.completed) {
+      return first.completed ? 1 : -1;
+    }
+
+    return getEventComparableTime(first) - getEventComparableTime(second);
+  });
+}
+
+function getEventCounselorOptions(events: ReservationEvent[]) {
+  const eventCounselors = events.map((event) => event.counselor?.trim()).filter(Boolean) as string[];
+  return Array.from(new Set(["대표행정사", "황인동", ...eventCounselors]));
+}
+
+function getUpcomingReservationEvents(events: ReservationEvent[]) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return sortReservationEvents(events)
+    .filter((event) => !event.completed && new Date(`${event.event_date}T00:00`).getTime() >= today.getTime())
+    .slice(0, 5);
 }
 
 function getFileExtension(fileName: string) {
