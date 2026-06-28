@@ -167,6 +167,23 @@ type ReservationEvent = {
   updated_at: string;
 };
 
+type DashboardData = {
+  events: ReservationEvent[];
+  consultLogs: ReservationConsultLog[];
+  fileCount: number | null;
+};
+
+type DashboardSummary = {
+  totalReservations: number;
+  todayReservations: number;
+  activeCases: number;
+  todayEvents: number;
+  upcomingEvents: number;
+  completedEvents: number;
+  consultLogs: number;
+  fileCount: number | null;
+};
+
 function readLocalReservations() {
   if (typeof window === "undefined") {
     return [];
@@ -313,6 +330,12 @@ export default function AdminPage() {
   const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
   const [deletingEvidenceFileId, setDeletingEvidenceFileId] = useState<string | null>(null);
   const [evidenceInputVersion, setEvidenceInputVersion] = useState(0);
+  const [dashboardData, setDashboardData] = useState<DashboardData>({
+    events: [],
+    consultLogs: [],
+    fileCount: null,
+  });
+  const [isDashboardLoading, setIsDashboardLoading] = useState(false);
 
   const filteredReservations = useMemo(() => {
     const keyword = normalizeSearchText(searchKeyword);
@@ -376,6 +399,11 @@ export default function AdminPage() {
     [reservations, selectedId],
   );
 
+  const dashboardSummary = useMemo(
+    () => createDashboardSummary(reservations, dashboardData),
+    [dashboardData, reservations],
+  );
+
   useEffect(() => {
     setIsAuthed(window.localStorage.getItem(ADMIN_AUTH_KEY) === "true");
   }, []);
@@ -425,15 +453,79 @@ export default function AdminPage() {
       setReservations(nextReservations);
       setSelectedId(nextReservations[0] ? getReservationKey(nextReservations[0]) : null);
       setMessage("Supabase reservations 테이블에서 데이터를 불러왔습니다.");
+      void loadDashboardData();
     } catch (error) {
       console.error("Failed to load reservations from Supabase:", error);
       const localReservations = normalizeReservations(readLocalReservations());
       setDataSource("local");
       setReservations(localReservations);
       setSelectedId(localReservations[0] ? getReservationKey(localReservations[0]) : null);
+      setDashboardData({ events: [], consultLogs: [], fileCount: null });
       setMessage("Supabase 조회에 실패해 localStorage fallback 데이터를 표시합니다.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function loadDashboardData() {
+    setIsDashboardLoading(true);
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const [eventsResult, consultLogsResult, filesResult] = await Promise.allSettled([
+        supabase.from("reservation_events").select("*"),
+        supabase.from("reservation_consult_logs").select("*").order("created_at", { ascending: false }),
+        supabase.from("reservation_files").select("id", { count: "exact", head: true }),
+      ]);
+
+      let nextEvents: ReservationEvent[] = [];
+      let nextConsultLogs: ReservationConsultLog[] = [];
+      let nextFileCount: number | null = null;
+
+      if (eventsResult.status === "fulfilled") {
+        if (eventsResult.value.error) {
+          console.error(eventsResult.value.error);
+        } else {
+          nextEvents = (eventsResult.value.data ?? []) as ReservationEvent[];
+        }
+      } else {
+        console.error(eventsResult.reason);
+      }
+
+      if (consultLogsResult.status === "fulfilled") {
+        if (consultLogsResult.value.error) {
+          console.error(consultLogsResult.value.error);
+        } else {
+          nextConsultLogs = (consultLogsResult.value.data ?? []) as ReservationConsultLog[];
+        }
+      } else {
+        console.error(consultLogsResult.reason);
+      }
+
+      if (filesResult.status === "fulfilled") {
+        if (filesResult.value.error) {
+          console.error(filesResult.value.error);
+        } else {
+          nextFileCount = filesResult.value.count ?? 0;
+        }
+      } else {
+        console.error(filesResult.reason);
+      }
+
+      setDashboardData({
+        events: nextEvents,
+        consultLogs: nextConsultLogs,
+        fileCount: nextFileCount,
+      });
+    } catch (error) {
+      console.error("Failed to load dashboard data:", error);
+      setDashboardData({ events: [], consultLogs: [], fileCount: null });
+    } finally {
+      setIsDashboardLoading(false);
     }
   }
 
@@ -454,6 +546,17 @@ export default function AdminPage() {
     setReservations((current) =>
       current.map((item) => (getReservationKey(item) === getReservationKey(reservation) ? { ...item, [field]: value } : item)),
     );
+  }
+
+  function selectReservationById(reservationId?: string | null) {
+    if (!reservationId) {
+      return;
+    }
+
+    const reservation = reservations.find((item) => item.id === reservationId);
+    if (reservation) {
+      setSelectedId(getReservationKey(reservation));
+    }
   }
 
   function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
@@ -1268,6 +1371,16 @@ export default function AdminPage() {
         </div>
       ) : null}
 
+      <AdminDashboard
+        consultLogs={dashboardData.consultLogs}
+        events={dashboardData.events}
+        fileCount={dashboardData.fileCount}
+        isLoading={isDashboardLoading}
+        onSelectReservation={selectReservationById}
+        reservations={reservations}
+        summary={dashboardSummary}
+      />
+
       <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.4fr)_repeat(4,minmax(140px,1fr))_auto] lg:items-end">
           <Field label="검색">
@@ -1536,6 +1649,160 @@ export default function AdminPage() {
       </div>
     </div>
   );
+}
+
+function AdminDashboard({
+  consultLogs,
+  events,
+  fileCount,
+  isLoading,
+  onSelectReservation,
+  reservations,
+  summary,
+}: {
+  consultLogs: ReservationConsultLog[];
+  events: ReservationEvent[];
+  fileCount: number | null;
+  isLoading: boolean;
+  onSelectReservation: (reservationId?: string | null) => void;
+  reservations: Reservation[];
+  summary: DashboardSummary;
+}) {
+  const reservationById = useMemo(() => createReservationByIdMap(reservations), [reservations]);
+  const todayEvents = useMemo(() => getTodayDashboardEvents(events), [events]);
+  const upcomingEvents = useMemo(() => getUpcomingDashboardEvents(events), [events]);
+  const recentConsultLogs = useMemo(() => getRecentConsultLogs(consultLogs), [consultLogs]);
+  const recentReservations = useMemo(() => reservations.slice(0, 5), [reservations]);
+  const summaryCards = [
+    { label: "전체 예약", value: summary.totalReservations },
+    { label: "오늘 예약", value: summary.todayReservations },
+    { label: "진행 중 사건", value: summary.activeCases },
+    { label: "오늘 일정", value: summary.todayEvents },
+    { label: "다가오는 일정", value: summary.upcomingEvents },
+    { label: "완료 일정", value: summary.completedEvents },
+    { label: "상담기록", value: summary.consultLogs },
+    { label: "증거자료", value: fileCount === null ? "-" : summary.fileCount },
+  ];
+
+  return (
+    <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-black text-slate-900">관리자 대시보드</h2>
+        {isLoading ? <p className="text-xs font-bold text-slate-500">요약 데이터를 불러오는 중입니다.</p> : null}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {summaryCards.map((card) => (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4" key={card.label}>
+            <p className="text-xs font-black text-slate-500">{card.label}</p>
+            <p className="mt-2 text-3xl font-black text-slate-900">{card.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <DashboardList title="오늘 일정">
+          {todayEvents.length === 0 ? (
+            <DashboardEmpty text="오늘 처리할 미완료 일정이 없습니다." />
+          ) : (
+            todayEvents.map((event) => {
+              const reservation = reservationById.get(event.reservation_id);
+              return (
+                <DashboardButton key={event.id} onClick={() => onSelectReservation(event.reservation_id)}>
+                  <span className="font-black text-slate-900">{event.event_time || "-"}</span>
+                  <span>{event.event_type}</span>
+                  <span className="font-semibold text-slate-800">{event.title}</span>
+                  <span>{event.counselor || "-"}</span>
+                  <span>{reservation?.name || "예약자 없음"}</span>
+                </DashboardButton>
+              );
+            })
+          )}
+        </DashboardList>
+
+        <DashboardList title="다가오는 일정">
+          {upcomingEvents.length === 0 ? (
+            <DashboardEmpty text="다가오는 미완료 일정이 없습니다." />
+          ) : (
+            upcomingEvents.map((event) => {
+              const reservation = reservationById.get(event.reservation_id);
+              return (
+                <DashboardButton key={event.id} onClick={() => onSelectReservation(event.reservation_id)}>
+                  <span className="font-black text-slate-900">{event.event_date}</span>
+                  <span>{event.event_time || "-"}</span>
+                  <span>{event.event_type}</span>
+                  <span className="font-semibold text-slate-800">{event.title}</span>
+                  <span>{event.counselor || "-"}</span>
+                  <span>{reservation?.name || "예약자 없음"}</span>
+                </DashboardButton>
+              );
+            })
+          )}
+        </DashboardList>
+
+        <DashboardList title="최근 상담기록">
+          {recentConsultLogs.length === 0 ? (
+            <DashboardEmpty text="최근 상담기록이 없습니다." />
+          ) : (
+            recentConsultLogs.map((log) => {
+              const reservation = reservationById.get(log.reservation_id);
+              return (
+                <DashboardButton key={log.id} onClick={() => onSelectReservation(log.reservation_id)}>
+                  <span className="font-black text-slate-900">{formatDate(log.created_at)}</span>
+                  <span>{log.consultation_type}</span>
+                  <span>{log.counselor || "-"}</span>
+                  <span className="font-semibold text-slate-800">{truncateText(log.content, 46)}</span>
+                  <span>{reservation?.name || "예약자 없음"}</span>
+                </DashboardButton>
+              );
+            })
+          )}
+        </DashboardList>
+
+        <DashboardList title="최근 예약">
+          {recentReservations.length === 0 ? (
+            <DashboardEmpty text="최근 예약이 없습니다." />
+          ) : (
+            recentReservations.map((reservation) => (
+              <DashboardButton key={getReservationKey(reservation)} onClick={() => onSelectReservation(reservation.id)}>
+                <span className="font-black text-slate-900">{formatDate(reservation.created_at)}</span>
+                <span>{reservation.name || "이름 없음"}</span>
+                <span>{reservation.phone || "연락처 없음"}</span>
+                <span>{reservation.product ?? reservation.consultation_type ?? "-"}</span>
+                <span>{reservation.reservation_status || "-"}</span>
+                <span>{reservation.case_status || "-"}</span>
+              </DashboardButton>
+            ))
+          )}
+        </DashboardList>
+      </div>
+    </section>
+  );
+}
+
+function DashboardList({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <h3 className="text-sm font-black text-slate-800">{title}</h3>
+      <div className="mt-3 space-y-2">{children}</div>
+    </div>
+  );
+}
+
+function DashboardButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return (
+    <button
+      className="grid w-full gap-1 rounded-lg border border-slate-200 bg-white p-3 text-left text-xs font-semibold text-slate-600 hover:border-navy hover:ring-2 hover:ring-navy/10 sm:grid-cols-2 lg:grid-cols-3"
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
+function DashboardEmpty({ text }: { text: string }) {
+  return <p className="rounded-lg bg-white p-3 text-sm font-semibold text-slate-500">{text}</p>;
 }
 
 function ConsultationLogSection({
@@ -1858,6 +2125,8 @@ function ReservationEventsSection({
   const visibleEvents = counselorFilter
     ? sortedEvents.filter((event) => (event.counselor || "") === counselorFilter)
     : sortedEvents;
+  const incompleteEvents = visibleEvents.filter((event) => !event.completed);
+  const completedEvents = visibleEvents.filter((event) => event.completed);
   const upcomingEvents = getUpcomingReservationEvents(events);
 
   return (
@@ -1982,8 +2251,78 @@ function ReservationEventsSection({
           표시할 사건 일정이 없습니다.
         </p>
       ) : (
-        <div className="mt-4 space-y-3">
-          {visibleEvents.map((event) => {
+        <div className="mt-4 space-y-5">
+          <ReservationEventGroup
+            deletingEventId={deletingEventId}
+            editingEventForms={editingEventForms}
+            editingEventId={editingEventId}
+            events={incompleteEvents}
+            onCancelEdit={onCancelEdit}
+            onChangeEdit={onChangeEdit}
+            onDelete={onDelete}
+            onStartEdit={onStartEdit}
+            onToggleComplete={onToggleComplete}
+            onUpdate={onUpdate}
+            savingEventId={savingEventId}
+            title={`미완료 일정 (${incompleteEvents.length}건)`}
+          />
+          <ReservationEventGroup
+            deletingEventId={deletingEventId}
+            editingEventForms={editingEventForms}
+            editingEventId={editingEventId}
+            events={completedEvents}
+            onCancelEdit={onCancelEdit}
+            onChangeEdit={onChangeEdit}
+            onDelete={onDelete}
+            onStartEdit={onStartEdit}
+            onToggleComplete={onToggleComplete}
+            onUpdate={onUpdate}
+            savingEventId={savingEventId}
+            title={`완료 일정 (${completedEvents.length}건)`}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReservationEventGroup({
+  deletingEventId,
+  editingEventForms,
+  editingEventId,
+  events,
+  onCancelEdit,
+  onChangeEdit,
+  onDelete,
+  onStartEdit,
+  onToggleComplete,
+  onUpdate,
+  savingEventId,
+  title,
+}: {
+  deletingEventId: string | null;
+  editingEventForms: Record<string, ReservationEventForm>;
+  editingEventId: string | null;
+  events: ReservationEvent[];
+  onCancelEdit: (eventId: string) => void;
+  onChangeEdit: (eventId: string, field: keyof ReservationEventForm, value: string | boolean) => void;
+  onDelete: (event: ReservationEvent) => void;
+  onStartEdit: (event: ReservationEvent) => void;
+  onToggleComplete: (event: ReservationEvent) => void;
+  onUpdate: (event: ReservationEvent) => void;
+  savingEventId: string | null;
+  title: string;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-black text-slate-800">{title}</h3>
+      {events.length === 0 ? (
+        <p className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
+          표시할 일정이 없습니다.
+        </p>
+      ) : (
+        <div className="mt-2 space-y-3">
+          {events.map((event) => {
             const isEditing = editingEventId === event.id;
             const editForm = editingEventForms[event.id] ?? {
               event_type: event.event_type,
@@ -2136,7 +2475,7 @@ function ReservationEventsSection({
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -2368,6 +2707,82 @@ function formatFileSize(bytes: number) {
   const value = bytes / 1024 ** unitIndex;
 
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function createDashboardSummary(reservations: Reservation[], data: DashboardData): DashboardSummary {
+  const today = getTodayDateCode();
+
+  return {
+    totalReservations: reservations.length,
+    todayReservations: reservations.filter((reservation) => getReservationDashboardDate(reservation) === today).length,
+    activeCases: reservations.filter((reservation) => (reservation.case_status || DEFAULT_CASE_STATUS) !== "종결").length,
+    todayEvents: data.events.filter((event) => event.event_date === today && !event.completed).length,
+    upcomingEvents: data.events.filter((event) => event.event_date >= today && !event.completed).length,
+    completedEvents: data.events.filter((event) => event.completed).length,
+    consultLogs: data.consultLogs.length,
+    fileCount: data.fileCount,
+  };
+}
+
+function createReservationByIdMap(reservations: Reservation[]) {
+  return new Map(reservations.filter((reservation) => reservation.id).map((reservation) => [reservation.id as string, reservation]));
+}
+
+function getTodayDashboardEvents(events: ReservationEvent[]) {
+  const today = getTodayDateCode();
+  return sortReservationEvents(events)
+    .filter((event) => event.event_date === today && !event.completed)
+    .slice(0, 5);
+}
+
+function getUpcomingDashboardEvents(events: ReservationEvent[]) {
+  const today = getTodayDateCode();
+  return sortReservationEvents(events)
+    .filter((event) => event.event_date >= today && !event.completed)
+    .slice(0, 5);
+}
+
+function getRecentConsultLogs(logs: ReservationConsultLog[]) {
+  return [...logs]
+    .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime())
+    .slice(0, 5);
+}
+
+function getReservationDashboardDate(reservation: Reservation) {
+  const preferredDate = reservation.preferred_date?.trim();
+  if (preferredDate) {
+    return preferredDate.slice(0, 10);
+  }
+
+  return getDateCode(reservation.created_at);
+}
+
+function getTodayDateCode() {
+  return getDateCode(new Date().toISOString());
+}
+
+function getDateCode(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value.slice(0, 10);
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
 function formatEventDateTime(event: Pick<ReservationEvent, "event_date" | "event_time">) {
