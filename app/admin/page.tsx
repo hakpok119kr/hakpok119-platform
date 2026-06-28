@@ -204,6 +204,13 @@ type AiCaseInsight = {
   priorityActions: string[];
   warnings: string[];
   analyzedAt: string;
+  analysisReasons: {
+    label: string;
+    score: number;
+    maxScore: number;
+    reason: string;
+    status: "충족" | "부족" | "확인필요";
+  }[];
 };
 
 type DetailSectionKey =
@@ -2474,7 +2481,40 @@ function AiCaseInsightDashboard({ insight }: { insight: AiCaseInsight }) {
         <AiInsightList items={insight.priorityActions} title="다음 우선업무" />
         <AiInsightList items={insight.warnings} title="주의사항" />
       </div>
+
+      <AiInsightReasonDetails insight={insight} />
     </div>
+  );
+}
+
+function AiInsightReasonDetails({ insight }: { insight: AiCaseInsight }) {
+  return (
+    <details className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+      <summary className="cursor-pointer text-sm font-black text-slate-800">AI 분석 근거 보기</summary>
+      <div className="mt-4 space-y-3">
+        <p className="text-sm font-black text-slate-900">AI 분석 근거</p>
+        {insight.analysisReasons.map((item) => {
+          const badge = getReasonStatusBadge(item.status);
+
+          return (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3" key={item.label}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-black text-slate-900">
+                  {item.label}: {item.score}/{item.maxScore}점
+                </p>
+                <span className={`w-fit rounded-full border px-3 py-1 text-xs font-black ${badge.className}`}>
+                  {badge.icon} {item.status}
+                </span>
+              </div>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">근거: {item.reason}</p>
+            </div>
+          );
+        })}
+        <div className="rounded-xl border border-navy/15 bg-navy/5 p-3 text-sm font-black text-navy">
+          총점: {insight.caseHealthScore}/100점
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -3760,16 +3800,66 @@ function buildAiCaseInsight(
       caseItem.diagnosis_payload,
   );
   const hasCaseSummary = hasText(caseItem.summary) || hasText(caseItem.content);
-
-  const caseHealthScore = clampScore(
-    (hasConsultation ? 20 : 0) +
-      (hasEvidence ? 20 : 0) +
-      (hasEvents ? 10 : 0) +
-      (hasAdminMemo ? 10 : 0) +
-      checklistScore +
-      (hasDiagnosis ? 10 : 0) +
-      (hasCaseSummary ? 10 : 0),
-  );
+  const analysisReasons: AiCaseInsight["analysisReasons"] = [
+    {
+      label: "상담기록",
+      maxScore: 20,
+      reason: hasConsultation
+        ? "상담기록이 등록되어 사건 사실관계 확인이 가능합니다."
+        : "상담기록이 없어 사건 흐름 확인이 어렵습니다.",
+      score: hasConsultation ? 20 : 0,
+      status: hasConsultation ? "충족" : "부족",
+    },
+    {
+      label: "증거자료",
+      maxScore: 20,
+      reason: hasEvidence
+        ? "증거자료가 등록되어 입증자료 검토가 가능합니다."
+        : "증거자료가 없어 피해 주장 입증 가능성 검토가 제한됩니다.",
+      score: hasEvidence ? 20 : 0,
+      status: hasEvidence ? "충족" : "부족",
+    },
+    {
+      label: "사건일정",
+      maxScore: 10,
+      reason: hasEvents
+        ? "학폭위 또는 제출기한 관련 일정이 등록되어 있습니다."
+        : "사건일정이 없어 학폭위 또는 제출기한 확인이 필요합니다.",
+      score: hasEvents ? 10 : 0,
+      status: hasEvents ? "충족" : "부족",
+    },
+    {
+      label: "관리자 메모",
+      maxScore: 10,
+      reason: hasAdminMemo
+        ? "담당자 검토 메모가 등록되어 실무 판단 근거를 확인할 수 있습니다."
+        : "담당자 검토 메모가 없어 실무 판단 근거가 부족합니다.",
+      score: hasAdminMemo ? 10 : 0,
+      status: hasAdminMemo ? "충족" : "부족",
+    },
+    {
+      label: "체크리스트",
+      maxScore: 20,
+      reason: `체크리스트 완료 항목 ${completedChecklistCount}/${checklistItems.length}건을 기준으로 산정되었습니다.`,
+      score: checklistScore,
+      status: checklistScore >= 14 ? "충족" : checklistScore > 0 ? "확인필요" : "부족",
+    },
+    {
+      label: "무료진단",
+      maxScore: 10,
+      reason: hasDiagnosis ? "무료진단 결과가 연결되어 초기 진단 정보를 참고할 수 있습니다." : "무료진단 결과가 연결되지 않았습니다.",
+      score: hasDiagnosis ? 10 : 0,
+      status: hasDiagnosis ? "충족" : "부족",
+    },
+    {
+      label: "사건요약",
+      maxScore: 10,
+      reason: hasCaseSummary ? "상담요약 또는 사건요약이 등록되어 있습니다." : "상담요약 또는 사건요약이 부족합니다.",
+      score: hasCaseSummary ? 10 : 0,
+      status: hasCaseSummary ? "충족" : "부족",
+    },
+  ];
+  const caseHealthScore = clampScore(analysisReasons.reduce((total, item) => total + item.score, 0));
   const caseCompleteness = caseHealthScore;
   const evidenceSufficiency = getEvidenceSufficiency(evidenceFiles.length, hasConsultation, hasAdminMemo);
   const aiConfidence = getAiInsightConfidence({
@@ -3820,6 +3910,7 @@ function buildAiCaseInsight(
   return {
     actionRiskLevel,
     aiConfidence,
+    analysisReasons,
     analyzedAt: new Date().toLocaleString("ko-KR", {
       day: "2-digit",
       hour: "2-digit",
@@ -4034,6 +4125,16 @@ function getAppealBadge(level: AiCaseInsight["appealPotential"]) {
   };
 
   return badgeByLevel[level] ?? { className: "border-slate-200 bg-slate-50 text-slate-700", icon: "⚪" };
+}
+
+function getReasonStatusBadge(status: AiCaseInsight["analysisReasons"][number]["status"]) {
+  const badgeByStatus: Record<AiCaseInsight["analysisReasons"][number]["status"], { className: string; icon: string }> = {
+    충족: { className: "border-green-200 bg-green-50 text-green-700", icon: "🟢" },
+    부족: { className: "border-red-200 bg-red-50 text-red-700", icon: "🔴" },
+    확인필요: { className: "border-yellow-200 bg-yellow-50 text-yellow-700", icon: "🟡" },
+  };
+
+  return badgeByStatus[status];
 }
 
 function getGeneralizedPartyLabel(studentType?: string) {
