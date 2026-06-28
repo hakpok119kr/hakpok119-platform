@@ -49,6 +49,21 @@ type Reservation = {
 
 const DEFAULT_RESERVATION_STATUS = "접수";
 const DEFAULT_CASE_STATUS = "상담대기";
+const EVIDENCE_BUCKET = "reservation-files";
+const MAX_EVIDENCE_FILE_SIZE = 30 * 1024 * 1024;
+const allowedEvidenceExtensions = new Set([
+  "pdf",
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "mp4",
+  "mp3",
+  "wav",
+  "doc",
+  "docx",
+  "hwp",
+]);
 
 type EditableReservationField =
   | "reservation_status"
@@ -83,6 +98,17 @@ const caseTimelineSteps = [
 const caseStatusOptions = ["상담대기", ...caseTimelineSteps];
 const managerOptions = ["대표행정사", "학교폭력 행정팀", "김행정 행정사"];
 const diagnosisTypeOptions = ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08"];
+
+type ReservationFile = {
+  id: string;
+  reservation_id: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type?: string | null;
+  uploaded_at: string;
+  uploaded_by?: string | null;
+};
 
 function readLocalReservations() {
   if (typeof window === "undefined") {
@@ -190,6 +216,12 @@ export default function AdminPage() {
   const [managerFilter, setManagerFilter] = useState("");
   const [diagnosisTypeFilter, setDiagnosisTypeFilter] = useState("");
   const [newConsultationLogs, setNewConsultationLogs] = useState<Record<string, string>>({});
+  const [evidenceFilesByReservation, setEvidenceFilesByReservation] = useState<Record<string, ReservationFile[]>>({});
+  const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<Record<string, File | null>>({});
+  const [loadingEvidenceId, setLoadingEvidenceId] = useState<string | null>(null);
+  const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
+  const [deletingEvidenceFileId, setDeletingEvidenceFileId] = useState<string | null>(null);
+  const [evidenceInputVersion, setEvidenceInputVersion] = useState(0);
 
   const filteredReservations = useMemo(() => {
     const keyword = normalizeSearchText(searchKeyword);
@@ -264,6 +296,14 @@ export default function AdminPage() {
 
     void loadReservations();
   }, [isAuthed]);
+
+  useEffect(() => {
+    if (!selectedReservation?.id || dataSource !== "supabase") {
+      return;
+    }
+
+    void loadEvidenceFiles(selectedReservation.id);
+  }, [dataSource, selectedReservation?.id]);
 
   async function loadReservations() {
     setIsLoading(true);
@@ -348,6 +388,188 @@ export default function AdminPage() {
       [key]: "",
     }));
     setMessage("");
+  }
+
+  function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
+    const key = getReservationKey(reservation);
+    setSelectedEvidenceFiles((current) => ({
+      ...current,
+      [key]: file ?? null,
+    }));
+  }
+
+  async function loadEvidenceFiles(reservationId: string) {
+    setLoadingEvidenceId(reservationId);
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { data, error } = await supabase
+        .from("reservation_files")
+        .select("*")
+        .eq("reservation_id", reservationId)
+        .order("uploaded_at", { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setEvidenceFilesByReservation((current) => ({
+        ...current,
+        [reservationId]: (data ?? []) as ReservationFile[],
+      }));
+    } catch (error) {
+      console.error("Failed to load evidence files:", error);
+      setMessage("증거자료 목록을 불러오지 못했습니다.");
+    } finally {
+      setLoadingEvidenceId(null);
+    }
+  }
+
+  async function uploadEvidenceFile(reservation: Reservation) {
+    const key = getReservationKey(reservation);
+    const file = selectedEvidenceFiles[key];
+
+    if (!reservation.id || dataSource !== "supabase") {
+      setMessage("Supabase에 저장된 예약만 증거자료를 업로드할 수 있습니다.");
+      return;
+    }
+
+    if (!file) {
+      setMessage("업로드할 증거자료 파일을 선택해 주세요.");
+      return;
+    }
+
+    const extension = getFileExtension(file.name);
+    if (!allowedEvidenceExtensions.has(extension)) {
+      setMessage("지원하지 않는 파일 형식입니다.");
+      return;
+    }
+
+    if (file.size > MAX_EVIDENCE_FILE_SIZE) {
+      setMessage("증거자료 파일은 30MB 이하만 업로드할 수 있습니다.");
+      return;
+    }
+
+    setUploadingEvidenceId(reservation.id);
+    setMessage("");
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setUploadingEvidenceId(null);
+      setMessage("Supabase 환경 변수가 없어 증거자료를 업로드할 수 없습니다.");
+      return;
+    }
+
+    const safeFileName = sanitizeFileName(file.name);
+    const storagePath = `${reservation.id}/${crypto.randomUUID()}-${safeFileName}`;
+    const filePath = `${EVIDENCE_BUCKET}/${storagePath}`;
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from(EVIDENCE_BUCKET)
+        .upload(storagePath, file, {
+          cacheControl: "3600",
+          contentType: file.type || undefined,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { error: insertError } = await supabase.from("reservation_files").insert({
+        reservation_id: reservation.id,
+        file_name: file.name,
+        file_path: filePath,
+        file_size: file.size,
+        mime_type: file.type || null,
+        uploaded_by: "admin",
+      });
+
+      if (insertError) {
+        await supabase.storage.from(EVIDENCE_BUCKET).remove([storagePath]);
+        throw insertError;
+      }
+
+      updateSelectedEvidenceFile(reservation);
+      setEvidenceInputVersion((current) => current + 1);
+      await loadEvidenceFiles(reservation.id);
+      setMessage("증거자료가 업로드되었습니다.");
+    } catch (error) {
+      console.error("Failed to upload evidence file:", error);
+      setMessage("증거자료 업로드에 실패했습니다.");
+    } finally {
+      setUploadingEvidenceId(null);
+    }
+  }
+
+  async function downloadEvidenceFile(file: ReservationFile) {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setMessage("Supabase 환경 변수가 없어 증거자료를 다운로드할 수 없습니다.");
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.storage
+        .from(EVIDENCE_BUCKET)
+        .createSignedUrl(getEvidenceStoragePath(file.file_path), 60);
+
+      if (error) {
+        throw error;
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      console.error("Failed to download evidence file:", error);
+      setMessage("증거자료 다운로드 링크를 만들지 못했습니다.");
+    }
+  }
+
+  async function deleteEvidenceFile(file: ReservationFile) {
+    if (!window.confirm("정말 삭제하시겠습니까?")) {
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setMessage("Supabase 환경 변수가 없어 증거자료를 삭제할 수 없습니다.");
+      return;
+    }
+
+    setDeletingEvidenceFileId(file.id);
+    setMessage("");
+
+    try {
+      const { error: storageError } = await supabase.storage
+        .from(EVIDENCE_BUCKET)
+        .remove([getEvidenceStoragePath(file.file_path)]);
+
+      if (storageError) {
+        throw storageError;
+      }
+
+      const { error: deleteError } = await supabase.from("reservation_files").delete().eq("id", file.id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      setEvidenceFilesByReservation((current) => ({
+        ...current,
+        [file.reservation_id]: (current[file.reservation_id] ?? []).filter((item) => item.id !== file.id),
+      }));
+      setMessage("증거자료가 삭제되었습니다.");
+    } catch (error) {
+      console.error("Failed to delete evidence file:", error);
+      setMessage("증거자료 삭제에 실패했습니다.");
+    } finally {
+      setDeletingEvidenceFileId(null);
+    }
   }
 
   async function saveReservation(reservation: Reservation) {
@@ -575,9 +797,6 @@ export default function AdminPage() {
                 <Info label="상담요약" value={selectedReservation.summary} />
               </div>
 
-              <DiagnosisResult reservation={selectedReservation} />
-              <CaseTimeline caseStatus={selectedReservation.case_status} />
-
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="예약상태">
                   <select
@@ -635,44 +854,34 @@ export default function AdminPage() {
                     value={asText(selectedReservation.submitted_documents)}
                   />
                 </Field>
-                <Field label="상담기록">
-                  <textarea
-                    className="min-h-28 w-full rounded-xl border border-slate-300 p-3"
-                    onChange={(event) => updateLocalField(selectedReservation, "consultation_log", event.target.value)}
-                    value={selectedReservation.consultation_log || ""}
-                  />
-                </Field>
-                <div className="md:col-span-2">
-                  <Field label="새 상담기록">
-                    <div className="space-y-2">
-                      <textarea
-                        className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
-                        onChange={(event) => updateNewConsultationLog(selectedReservation, event.target.value)}
-                        placeholder="새로 추가할 상담기록을 입력해 주세요."
-                        value={newConsultationLogs[getReservationKey(selectedReservation)] || ""}
-                      />
-                      <div className="flex justify-end">
-                        <button
-                          className="btn-outline"
-                          onClick={() => appendConsultationLog(selectedReservation)}
-                          type="button"
-                        >
-                          상담기록 추가
-                        </button>
-                      </div>
-                    </div>
-                  </Field>
-                </div>
-                <div className="md:col-span-2">
-                  <Field label="관리자 메모">
-                    <textarea
-                      className="min-h-32 w-full rounded-xl border border-slate-300 p-3"
-                      onChange={(event) => updateLocalField(selectedReservation, "admin_memo", event.target.value)}
-                      value={selectedReservation.admin_memo || ""}
-                    />
-                  </Field>
-                </div>
               </div>
+
+              <DiagnosisResult reservation={selectedReservation} />
+              <ConsultationLogSection
+                newLog={newConsultationLogs[getReservationKey(selectedReservation)] || ""}
+                onAppendLog={() => appendConsultationLog(selectedReservation)}
+                onChangeLog={(value) => updateLocalField(selectedReservation, "consultation_log", value)}
+                onChangeNewLog={(value) => updateNewConsultationLog(selectedReservation, value)}
+                reservation={selectedReservation}
+              />
+              <CaseTimeline caseStatus={selectedReservation.case_status} />
+              <EvidenceFilesSection
+                deletingFileId={deletingEvidenceFileId}
+                files={selectedReservation.id ? evidenceFilesByReservation[selectedReservation.id] ?? [] : []}
+                isLoading={loadingEvidenceId === selectedReservation.id}
+                isSupabaseReservation={dataSource === "supabase" && Boolean(selectedReservation.id)}
+                isUploading={uploadingEvidenceId === selectedReservation.id}
+                onDelete={deleteEvidenceFile}
+                onDownload={downloadEvidenceFile}
+                onFileChange={(file) => updateSelectedEvidenceFile(selectedReservation, file)}
+                onUpload={() => uploadEvidenceFile(selectedReservation)}
+                selectedFile={selectedEvidenceFiles[getReservationKey(selectedReservation)] ?? null}
+                uploadInputKey={`${getReservationKey(selectedReservation)}-${evidenceInputVersion}`}
+              />
+              <AdminMemoSection
+                onChange={(value) => updateLocalField(selectedReservation, "admin_memo", value)}
+                value={selectedReservation.admin_memo || ""}
+              />
 
               <div className="mt-6 flex justify-end">
                 <button
@@ -691,6 +900,50 @@ export default function AdminPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+function ConsultationLogSection({
+  newLog,
+  onAppendLog,
+  onChangeLog,
+  onChangeNewLog,
+  reservation,
+}: {
+  newLog: string;
+  onAppendLog: () => void;
+  onChangeLog: (value: string) => void;
+  onChangeNewLog: (value: string) => void;
+  reservation: Reservation;
+}) {
+  return (
+    <section className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <h2 className="text-sm font-black text-slate-800">상담기록</h2>
+      <div className="mt-3 space-y-4">
+        <Field label="상담기록">
+          <textarea
+            className="min-h-28 w-full rounded-xl border border-slate-300 p-3"
+            onChange={(event) => onChangeLog(event.target.value)}
+            value={reservation.consultation_log || ""}
+          />
+        </Field>
+        <Field label="새 상담기록">
+          <div className="space-y-2">
+            <textarea
+              className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
+              onChange={(event) => onChangeNewLog(event.target.value)}
+              placeholder="새로 추가할 상담기록을 입력해 주세요."
+              value={newLog}
+            />
+            <div className="flex justify-end">
+              <button className="btn-outline" onClick={onAppendLog} type="button">
+                상담기록 추가
+              </button>
+            </div>
+          </div>
+        </Field>
+      </div>
+    </section>
   );
 }
 
@@ -740,6 +993,129 @@ function CaseTimeline({ caseStatus }: { caseStatus?: string }) {
           );
         })}
       </ol>
+    </section>
+  );
+}
+
+function EvidenceFilesSection({
+  deletingFileId,
+  files,
+  isLoading,
+  isSupabaseReservation,
+  isUploading,
+  onDelete,
+  onDownload,
+  onFileChange,
+  onUpload,
+  selectedFile,
+  uploadInputKey,
+}: {
+  deletingFileId: string | null;
+  files: ReservationFile[];
+  isLoading: boolean;
+  isSupabaseReservation: boolean;
+  isUploading: boolean;
+  onDelete: (file: ReservationFile) => void;
+  onDownload: (file: ReservationFile) => void;
+  onFileChange: (file?: File) => void;
+  onUpload: () => void;
+  selectedFile: File | null;
+  uploadInputKey: string;
+}) {
+  return (
+    <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-sm font-black text-slate-800">증거자료</h2>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            PDF, 이미지, 영상, 음성, 문서 파일을 30MB 이하로 업로드할 수 있습니다.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.mp4,.mp3,.wav,.doc,.docx,.hwp"
+            className="w-full rounded-xl border border-slate-300 bg-white p-2 text-sm sm:w-72"
+            disabled={!isSupabaseReservation || isUploading}
+            key={uploadInputKey}
+            onChange={(event) => onFileChange(event.target.files?.[0])}
+            type="file"
+          />
+          <button
+            className="btn-primary whitespace-nowrap"
+            disabled={!isSupabaseReservation || !selectedFile || isUploading}
+            onClick={onUpload}
+            type="button"
+          >
+            {isUploading ? "업로드 중" : "업로드"}
+          </button>
+        </div>
+      </div>
+
+      {!isSupabaseReservation ? (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
+          Supabase에 저장된 예약에서만 증거자료를 관리할 수 있습니다.
+        </p>
+      ) : isLoading ? (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
+          증거자료를 불러오는 중입니다.
+        </p>
+      ) : files.length === 0 ? (
+        <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
+          등록된 증거자료가 없습니다.
+        </p>
+      ) : (
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead className="bg-slate-100 text-xs font-black text-slate-600">
+              <tr>
+                <th className="px-3 py-2">파일명</th>
+                <th className="px-3 py-2">용량</th>
+                <th className="px-3 py-2">등록일</th>
+                <th className="px-3 py-2">다운로드</th>
+                <th className="px-3 py-2">삭제</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {files.map((file) => (
+                <tr key={file.id}>
+                  <td className="max-w-xs truncate px-3 py-2 font-semibold text-slate-800">{file.file_name}</td>
+                  <td className="px-3 py-2 text-slate-600">{formatFileSize(file.file_size)}</td>
+                  <td className="px-3 py-2 text-slate-600">{formatDate(file.uploaded_at)}</td>
+                  <td className="px-3 py-2">
+                    <button className="btn-outline px-3 py-2 text-xs" onClick={() => onDownload(file)} type="button">
+                      다운로드
+                    </button>
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      className="btn-outline px-3 py-2 text-xs"
+                      disabled={deletingFileId === file.id}
+                      onClick={() => onDelete(file)}
+                      type="button"
+                    >
+                      {deletingFileId === file.id ? "삭제 중" : "삭제"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AdminMemoSection({ onChange, value }: { onChange: (value: string) => void; value: string }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <Field label="관리자 메모">
+        <textarea
+          className="min-h-32 w-full rounded-xl border border-slate-300 p-3"
+          onChange={(event) => onChange(event.target.value)}
+          value={value}
+        />
+      </Field>
     </section>
   );
 }
@@ -837,6 +1213,34 @@ function formatConsultationLogDate(date: Date) {
   const minute = String(date.getMinutes()).padStart(2, "0");
 
   return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** unitIndex;
+
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function getFileExtension(fileName: string) {
+  return fileName.split(".").pop()?.trim().toLowerCase() ?? "";
+}
+
+function sanitizeFileName(fileName: string) {
+  const extension = getFileExtension(fileName);
+  const baseName = fileName.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9가-힣._-]+/g, "-");
+  const normalizedBaseName = baseName.replace(/^-+|-+$/g, "") || "file";
+
+  return extension ? `${normalizedBaseName}.${extension}` : normalizedBaseName;
+}
+
+function getEvidenceStoragePath(filePath: string) {
+  return filePath.startsWith(`${EVIDENCE_BUCKET}/`) ? filePath.slice(EVIDENCE_BUCKET.length + 1) : filePath;
 }
 
 function normalizeSearchText(value: unknown) {
