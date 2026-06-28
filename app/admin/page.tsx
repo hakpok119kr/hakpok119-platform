@@ -184,6 +184,25 @@ type DashboardSummary = {
   fileCount: number | null;
 };
 
+type DetailSectionKey =
+  | "reservationInfo"
+  | "diagnosis"
+  | "consultLogs"
+  | "timeline"
+  | "events"
+  | "evidence"
+  | "adminMemo";
+
+const defaultDetailSectionOpen: Record<DetailSectionKey, boolean> = {
+  reservationInfo: true,
+  diagnosis: false,
+  consultLogs: true,
+  timeline: true,
+  events: false,
+  evidence: false,
+  adminMemo: false,
+};
+
 function readLocalReservations() {
   if (typeof window === "undefined") {
     return [];
@@ -311,6 +330,7 @@ export default function AdminPage() {
   const [diagnosisTypeFilter, setDiagnosisTypeFilter] = useState("");
   const [consultLogsByReservation, setConsultLogsByReservation] = useState<Record<string, ReservationConsultLog[]>>({});
   const [newConsultLogForms, setNewConsultLogForms] = useState<Record<string, ConsultLogForm>>({});
+  const [consultLogFormOpen, setConsultLogFormOpen] = useState<Record<string, boolean>>({});
   const [editingConsultLogForms, setEditingConsultLogForms] = useState<Record<string, ConsultLogForm>>({});
   const [loadingConsultLogsId, setLoadingConsultLogsId] = useState<string | null>(null);
   const [savingConsultLogId, setSavingConsultLogId] = useState<string | null>(null);
@@ -318,6 +338,7 @@ export default function AdminPage() {
   const [deletingConsultLogId, setDeletingConsultLogId] = useState<string | null>(null);
   const [eventsByReservation, setEventsByReservation] = useState<Record<string, ReservationEvent[]>>({});
   const [newEventForms, setNewEventForms] = useState<Record<string, ReservationEventForm>>({});
+  const [eventFormOpen, setEventFormOpen] = useState<Record<string, boolean>>({});
   const [editingEventForms, setEditingEventForms] = useState<Record<string, ReservationEventForm>>({});
   const [eventCounselorFilters, setEventCounselorFilters] = useState<Record<string, string>>({});
   const [loadingEventsId, setLoadingEventsId] = useState<string | null>(null);
@@ -326,6 +347,7 @@ export default function AdminPage() {
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
   const [evidenceFilesByReservation, setEvidenceFilesByReservation] = useState<Record<string, ReservationFile[]>>({});
   const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<Record<string, File | null>>({});
+  const [evidenceUploadOpen, setEvidenceUploadOpen] = useState<Record<string, boolean>>({});
   const [loadingEvidenceId, setLoadingEvidenceId] = useState<string | null>(null);
   const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
   const [deletingEvidenceFileId, setDeletingEvidenceFileId] = useState<string | null>(null);
@@ -336,6 +358,8 @@ export default function AdminPage() {
     fileCount: null,
   });
   const [isDashboardLoading, setIsDashboardLoading] = useState(false);
+  const [openDetailSections, setOpenDetailSections] =
+    useState<Record<DetailSectionKey, boolean>>(defaultDetailSectionOpen);
 
   const filteredReservations = useMemo(() => {
     const keyword = normalizeSearchText(searchKeyword);
@@ -403,6 +427,14 @@ export default function AdminPage() {
     () => createDashboardSummary(reservations, dashboardData),
     [dashboardData, reservations],
   );
+  const selectedReservationKey = selectedReservation ? getReservationKey(selectedReservation) : "";
+  const selectedConsultLogs = selectedReservation?.id
+    ? consultLogsByReservation[selectedReservation.id] ?? []
+    : [];
+  const selectedEvents = selectedReservation?.id ? eventsByReservation[selectedReservation.id] ?? [] : [];
+  const selectedReservationFiles = selectedReservation?.id
+    ? evidenceFilesByReservation[selectedReservation.id] ?? []
+    : [];
 
   useEffect(() => {
     setIsAuthed(window.localStorage.getItem(ADMIN_AUTH_KEY) === "true");
@@ -427,6 +459,34 @@ export default function AdminPage() {
     void loadReservationEvents(selectedReservation.id);
     void loadEvidenceFiles(selectedReservation.id);
   }, [dataSource, selectedReservation?.id]);
+
+  function toggleDetailSection(section: DetailSectionKey) {
+    setOpenDetailSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  }
+
+  function setConsultLogFormVisibility(reservation: Reservation, isOpen: boolean) {
+    setConsultLogFormOpen((current) => ({
+      ...current,
+      [getReservationKey(reservation)]: isOpen,
+    }));
+  }
+
+  function setEventFormVisibility(reservation: Reservation, isOpen: boolean) {
+    setEventFormOpen((current) => ({
+      ...current,
+      [getReservationKey(reservation)]: isOpen,
+    }));
+  }
+
+  function setEvidenceUploadVisibility(reservation: Reservation, isOpen: boolean) {
+    setEvidenceUploadOpen((current) => ({
+      ...current,
+      [getReservationKey(reservation)]: isOpen,
+    }));
+  }
 
   async function loadReservations() {
     setIsLoading(true);
@@ -648,7 +708,7 @@ export default function AdminPage() {
       }));
     } catch (error) {
       console.error("Failed to load consult logs:", error);
-      setMessage("상담기록 목록을 불러오지 못했습니다.");
+      setMessage("상담기록을 확인할 수 없습니다.");
     } finally {
       setLoadingConsultLogsId(null);
     }
@@ -744,6 +804,7 @@ export default function AdminPage() {
         ...current,
         [reservationId]: (refreshedLogs ?? []) as ReservationConsultLog[],
       }));
+      setConsultLogFormVisibility(reservation, false);
       setMessage("상담기록이 저장되었습니다.");
     } catch (error) {
       console.error("Failed to create consult log:", error);
@@ -923,7 +984,7 @@ export default function AdminPage() {
       }));
     } catch (error) {
       console.error("Failed to load reservation events:", error);
-      setMessage(`사건 일정 조회 실패: ${getSupabaseErrorMessage(error)}`);
+      setMessage("사건 일정을 확인할 수 없습니다.");
     } finally {
       setLoadingEventsId(null);
     }
@@ -974,6 +1035,7 @@ export default function AdminPage() {
         ...current,
         [key]: createReservationEventForm(reservation.manager),
       }));
+      setEventFormVisibility(reservation, false);
       await loadReservationEvents(reservationId);
       setMessage("사건 일정이 저장되었습니다.");
     } catch (error) {
@@ -1123,7 +1185,7 @@ export default function AdminPage() {
       }));
     } catch (error) {
       console.error("Failed to load evidence files:", error);
-      setMessage("증거자료 목록을 불러오지 못했습니다.");
+      setMessage("증거자료를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setLoadingEvidenceId(null);
     }
@@ -1197,6 +1259,7 @@ export default function AdminPage() {
 
       updateSelectedEvidenceFile(reservation);
       setEvidenceInputVersion((current) => current + 1);
+      setEvidenceUploadVisibility(reservation, false);
       await loadEvidenceFiles(reservation.id);
       setMessage("증거자료가 업로드되었습니다.");
     } catch (error) {
@@ -1469,8 +1532,10 @@ export default function AdminPage() {
               const key = getReservationKey(reservation);
               return (
                 <button
-                  className={`w-full rounded-2xl border bg-white p-4 text-left shadow-sm ${
-                    selectedId === key ? "border-navy ring-2 ring-navy/10" : "border-slate-200"
+                  className={`w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition ${
+                    selectedId === key
+                      ? "border-navy bg-navy/5 ring-2 ring-navy/20"
+                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                   }`}
                   key={key}
                   onClick={() => setSelectedId(key)}
@@ -1484,6 +1549,13 @@ export default function AdminPage() {
                   </div>
                   <p className="mt-2 text-sm text-slate-600">{reservation.phone || "연락처 없음"}</p>
                   <p className="mt-1 text-xs text-slate-500">{formatDate(reservation.created_at)}</p>
+                  <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-600 sm:grid-cols-2">
+                    {reservation.case_number ? (
+                      <span className="rounded-lg bg-navy/10 px-2 py-1 text-navy">{reservation.case_number}</span>
+                    ) : null}
+                    <span className="rounded-lg bg-slate-100 px-2 py-1">사건상태: {reservation.case_status || "-"}</span>
+                    <span className="rounded-lg bg-slate-100 px-2 py-1">담당자: {reservation.manager || "-"}</span>
+                  </div>
                 </button>
               );
             })
@@ -1493,6 +1565,12 @@ export default function AdminPage() {
         <section className="card">
           {selectedReservation ? (
             <div>
+              <CaseSummaryPanel events={selectedEvents} reservation={selectedReservation} />
+              <AccordionSection
+                isOpen={openDetailSections.reservationInfo}
+                onToggle={() => toggleDetailSection("reservationInfo")}
+                title="예약정보"
+              >
               <div className="mb-6 grid gap-3 border-b border-slate-200 pb-5 md:grid-cols-2">
                 <Info label="신청자" value={selectedReservation.name} />
                 <Info label="연락처" value={selectedReservation.phone} />
@@ -1566,16 +1644,31 @@ export default function AdminPage() {
                 </Field>
               </div>
 
-              <DiagnosisResult reservation={selectedReservation} />
+              </AccordionSection>
+
+              <AccordionSection
+                isOpen={openDetailSections.diagnosis}
+                onToggle={() => toggleDetailSection("diagnosis")}
+                title="연결된 무료진단 결과"
+              >
+                <DiagnosisResult reservation={selectedReservation} />
+              </AccordionSection>
+              <AccordionSection
+                count={selectedConsultLogs.length}
+                isOpen={openDetailSections.consultLogs}
+                onToggle={() => toggleDetailSection("consultLogs")}
+                title="상담기록"
+              >
               <ConsultationLogSection
                 deletingLogId={deletingConsultLogId}
                 editingLogForms={editingConsultLogForms}
                 editingLogId={editingConsultLogId}
+                isNewFormOpen={consultLogFormOpen[selectedReservationKey] ?? false}
                 isLoading={loadingConsultLogsId === selectedReservation.id}
                 isSupabaseReservation={dataSource === "supabase" && isUuid(selectedReservation.id)}
-                logs={selectedReservation.id ? consultLogsByReservation[selectedReservation.id] ?? [] : []}
+                logs={selectedConsultLogs}
                 newLogForm={
-                  newConsultLogForms[getReservationKey(selectedReservation)] ??
+                  newConsultLogForms[selectedReservationKey] ??
                   createConsultLogForm(selectedReservation.manager)
                 }
                 onCancelEdit={cancelEditConsultLog}
@@ -1584,21 +1677,38 @@ export default function AdminPage() {
                 onCreate={() => createConsultLog(selectedReservation)}
                 onDelete={deleteConsultLog}
                 onStartEdit={startEditConsultLog}
+                onToggleNewForm={() =>
+                  setConsultLogFormVisibility(selectedReservation, !(consultLogFormOpen[selectedReservationKey] ?? false))
+                }
                 onUpdate={updateConsultLog}
                 reservation={selectedReservation}
                 savingLogId={savingConsultLogId}
               />
-              <CaseTimeline caseStatus={selectedReservation.case_status} />
+              </AccordionSection>
+              <AccordionSection
+                isOpen={openDetailSections.timeline}
+                onToggle={() => toggleDetailSection("timeline")}
+                title="사건 진행 타임라인"
+              >
+                <CaseTimeline caseStatus={selectedReservation.case_status} />
+              </AccordionSection>
+              <AccordionSection
+                count={selectedEvents.length}
+                isOpen={openDetailSections.events}
+                onToggle={() => toggleDetailSection("events")}
+                title="사건 일정"
+              >
               <ReservationEventsSection
-                counselorFilter={eventCounselorFilters[getReservationKey(selectedReservation)] ?? ""}
+                counselorFilter={eventCounselorFilters[selectedReservationKey] ?? ""}
                 deletingEventId={deletingEventId}
                 editingEventForms={editingEventForms}
                 editingEventId={editingEventId}
-                events={selectedReservation.id ? eventsByReservation[selectedReservation.id] ?? [] : []}
+                events={selectedEvents}
+                isNewFormOpen={eventFormOpen[selectedReservationKey] ?? false}
                 isLoading={loadingEventsId === selectedReservation.id}
                 isSupabaseReservation={dataSource === "supabase" && isUuid(selectedReservation.id)}
                 newEventForm={
-                  newEventForms[getReservationKey(selectedReservation)] ??
+                  newEventForms[selectedReservationKey] ??
                   createReservationEventForm(selectedReservation.manager)
                 }
                 onCancelEdit={cancelEditEvent}
@@ -1608,28 +1718,49 @@ export default function AdminPage() {
                 onCreate={() => createReservationEvent(selectedReservation)}
                 onDelete={deleteReservationEvent}
                 onStartEdit={startEditEvent}
+                onToggleNewForm={() =>
+                  setEventFormVisibility(selectedReservation, !(eventFormOpen[selectedReservationKey] ?? false))
+                }
                 onToggleComplete={toggleReservationEventCompleted}
                 onUpdate={updateReservationEvent}
                 reservationName={selectedReservation.name || "이름 없음"}
                 savingEventId={savingEventId}
               />
+              </AccordionSection>
+              <AccordionSection
+                count={selectedReservationFiles.length}
+                isOpen={openDetailSections.evidence}
+                onToggle={() => toggleDetailSection("evidence")}
+                title="증거자료"
+              >
               <EvidenceFilesSection
                 deletingFileId={deletingEvidenceFileId}
-                files={selectedReservation.id ? evidenceFilesByReservation[selectedReservation.id] ?? [] : []}
+                files={selectedReservationFiles}
+                isUploadOpen={evidenceUploadOpen[selectedReservationKey] ?? false}
                 isLoading={loadingEvidenceId === selectedReservation.id}
                 isSupabaseReservation={dataSource === "supabase" && Boolean(selectedReservation.id)}
                 isUploading={uploadingEvidenceId === selectedReservation.id}
                 onDelete={deleteEvidenceFile}
                 onDownload={downloadEvidenceFile}
                 onFileChange={(file) => updateSelectedEvidenceFile(selectedReservation, file)}
+                onToggleUpload={() =>
+                  setEvidenceUploadVisibility(selectedReservation, !(evidenceUploadOpen[selectedReservationKey] ?? false))
+                }
                 onUpload={() => uploadEvidenceFile(selectedReservation)}
-                selectedFile={selectedEvidenceFiles[getReservationKey(selectedReservation)] ?? null}
-                uploadInputKey={`${getReservationKey(selectedReservation)}-${evidenceInputVersion}`}
+                selectedFile={selectedEvidenceFiles[selectedReservationKey] ?? null}
+                uploadInputKey={`${selectedReservationKey}-${evidenceInputVersion}`}
               />
+              </AccordionSection>
+              <AccordionSection
+                isOpen={openDetailSections.adminMemo}
+                onToggle={() => toggleDetailSection("adminMemo")}
+                title="관리자 메모"
+              >
               <AdminMemoSection
                 onChange={(value) => updateLocalField(selectedReservation, "admin_memo", value)}
                 value={selectedReservation.admin_memo || ""}
               />
+              </AccordionSection>
 
               <div className="mt-6 flex justify-end">
                 <button
@@ -1683,6 +1814,16 @@ function AdminDashboard({
     { label: "상담기록", value: summary.consultLogs },
     { label: "증거자료", value: fileCount === null ? "-" : summary.fileCount },
   ];
+  const summaryCardTones = [
+    "border-slate-200 bg-slate-50 text-slate-900",
+    "border-blue-200 bg-blue-50 text-blue-950",
+    "border-amber-200 bg-amber-50 text-amber-950",
+    "border-rose-200 bg-rose-50 text-rose-950",
+    "border-indigo-200 bg-indigo-50 text-indigo-950",
+    "border-emerald-200 bg-emerald-50 text-emerald-950",
+    "border-violet-200 bg-violet-50 text-violet-950",
+    "border-slate-300 bg-white text-slate-800",
+  ];
 
   return (
     <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1692,10 +1833,10 @@ function AdminDashboard({
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {summaryCards.map((card) => (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4" key={card.label}>
-            <p className="text-xs font-black text-slate-500">{card.label}</p>
-            <p className="mt-2 text-3xl font-black text-slate-900">{card.value}</p>
+        {summaryCards.map((card, index) => (
+          <div className={`rounded-xl border p-4 ${summaryCardTones[index] ?? summaryCardTones[0]}`} key={card.label}>
+            <p className="text-xs font-black opacity-70">{card.label}</p>
+            <p className="mt-2 text-4xl font-black">{card.value}</p>
           </div>
         ))}
       </div>
@@ -1708,7 +1849,11 @@ function AdminDashboard({
             todayEvents.map((event) => {
               const reservation = reservationById.get(event.reservation_id);
               return (
-                <DashboardButton key={event.id} onClick={() => onSelectReservation(event.reservation_id)}>
+                <DashboardButton
+                  key={event.id}
+                  onClick={() => onSelectReservation(event.reservation_id)}
+                  variant={isImportantReservationEvent(event) ? "important" : "today"}
+                >
                   <span className="font-black text-slate-900">{event.event_time || "-"}</span>
                   <span>{event.event_type}</span>
                   <span className="font-semibold text-slate-800">{event.title}</span>
@@ -1727,7 +1872,11 @@ function AdminDashboard({
             upcomingEvents.map((event) => {
               const reservation = reservationById.get(event.reservation_id);
               return (
-                <DashboardButton key={event.id} onClick={() => onSelectReservation(event.reservation_id)}>
+                <DashboardButton
+                  key={event.id}
+                  onClick={() => onSelectReservation(event.reservation_id)}
+                  variant={isImportantReservationEvent(event) ? "important" : "default"}
+                >
                   <span className="font-black text-slate-900">{event.event_date}</span>
                   <span>{event.event_time || "-"}</span>
                   <span>{event.event_type}</span>
@@ -1789,10 +1938,25 @@ function DashboardList({ children, title }: { children: ReactNode; title: string
   );
 }
 
-function DashboardButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+function DashboardButton({
+  children,
+  onClick,
+  variant = "default",
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  variant?: "default" | "today" | "important";
+}) {
+  const variantClass =
+    variant === "important"
+      ? "border-amber-300 bg-amber-50 hover:border-amber-400"
+      : variant === "today"
+        ? "border-rose-200 bg-rose-50/70 hover:border-rose-300"
+        : "border-slate-200 bg-white hover:border-navy";
+
   return (
     <button
-      className="grid w-full gap-1 rounded-lg border border-slate-200 bg-white p-3 text-left text-xs font-semibold text-slate-600 hover:border-navy hover:ring-2 hover:ring-navy/10 sm:grid-cols-2 lg:grid-cols-3"
+      className={`grid w-full gap-1 rounded-lg border p-3 text-left text-xs font-semibold text-slate-600 hover:ring-2 hover:ring-navy/10 sm:grid-cols-2 lg:grid-cols-3 ${variantClass}`}
       onClick={onClick}
       type="button"
     >
@@ -1805,10 +1969,85 @@ function DashboardEmpty({ text }: { text: string }) {
   return <p className="rounded-lg bg-white p-3 text-sm font-semibold text-slate-500">{text}</p>;
 }
 
+function AccordionSection({
+  children,
+  count,
+  isOpen,
+  onToggle,
+  title,
+}: {
+  children: ReactNode;
+  count?: number;
+  isOpen: boolean;
+  onToggle: () => void;
+  title: string;
+}) {
+  return (
+    <section className="mb-4 rounded-xl border border-slate-200 bg-white shadow-sm">
+      <button
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="text-sm font-black text-slate-800">
+          {isOpen ? "▼" : "▶"} {title}
+          {typeof count === "number" ? ` (${count}건)` : ""}
+        </span>
+        <span className="text-xs font-bold text-slate-500">{isOpen ? "접기" : "펼치기"}</span>
+      </button>
+      {isOpen ? <div className="border-t border-slate-100 p-4">{children}</div> : null}
+    </section>
+  );
+}
+
+function CaseSummaryPanel({ events, reservation }: { events: ReservationEvent[]; reservation: Reservation }) {
+  const progress = getCaseProgressInfo(reservation.case_status);
+  const nextEvent = getNextReservationEvent(events);
+  const nextEventText = nextEvent
+    ? `${formatEventDateTime(nextEvent)} ${nextEvent.event_type}`
+    : "등록된 다음 일정 없음";
+
+  return (
+    <section className="mb-4 rounded-2xl border border-navy/15 bg-navy/5 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-base font-black text-slate-900">사건 요약</h2>
+          <div className="mt-3 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+            <Info label="사건번호" value={reservation.case_number} />
+            <Info label="신청자" value={reservation.name} />
+            <Info label="연락처" value={reservation.phone} />
+            <Info label="예약상태" value={reservation.reservation_status} />
+            <Info label="사건상태" value={reservation.case_status} />
+            <Info label="담당자" value={reservation.manager} />
+            <Info label="현재 진행단계" value={progress.step} />
+            <Info label="다음 일정" value={nextEventText} />
+          </div>
+        </div>
+        <div className="w-full rounded-xl border border-white/80 bg-white p-4 shadow-sm lg:max-w-xs">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-black text-slate-500">진행률</p>
+              <p className="mt-1 text-3xl font-black text-navy">{progress.percent}%</p>
+            </div>
+            <p className="text-sm font-black text-slate-700">{progress.step}</p>
+          </div>
+          <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-navy" style={{ width: `${progress.percent}%` }} />
+          </div>
+          <p className="mt-2 text-xs font-semibold text-slate-500">
+            {progress.index + 1}/{caseTimelineSteps.length} 단계
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ConsultationLogSection({
   deletingLogId,
   editingLogForms,
   editingLogId,
+  isNewFormOpen,
   isLoading,
   isSupabaseReservation,
   logs,
@@ -1819,6 +2058,7 @@ function ConsultationLogSection({
   onCreate,
   onDelete,
   onStartEdit,
+  onToggleNewForm,
   onUpdate,
   reservation,
   savingLogId,
@@ -1826,6 +2066,7 @@ function ConsultationLogSection({
   deletingLogId: string | null;
   editingLogForms: Record<string, ConsultLogForm>;
   editingLogId: string | null;
+  isNewFormOpen: boolean;
   isLoading: boolean;
   isSupabaseReservation: boolean;
   logs: ReservationConsultLog[];
@@ -1836,6 +2077,7 @@ function ConsultationLogSection({
   onCreate: () => void;
   onDelete: (log: ReservationConsultLog) => void;
   onStartEdit: (log: ReservationConsultLog) => void;
+  onToggleNewForm: () => void;
   onUpdate: (log: ReservationConsultLog) => void;
   reservation: Reservation;
   savingLogId: string | null;
@@ -1858,6 +2100,13 @@ function ConsultationLogSection({
         </div>
       ) : null}
 
+      <div className="mt-4">
+        <button className="btn-outline px-3 py-2 text-sm" onClick={onToggleNewForm} type="button">
+          {isNewFormOpen ? "새 상담기록 작성 닫기" : "＋ 새 상담기록 작성"}
+        </button>
+      </div>
+
+      {isNewFormOpen ? (
       <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="text-sm font-black text-slate-800">새 상담기록 입력</h3>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -1910,6 +2159,8 @@ function ConsultationLogSection({
           </p>
         ) : null}
       </div>
+
+      ) : null}
 
       {isLoading ? (
         <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
@@ -2085,6 +2336,7 @@ function ReservationEventsSection({
   editingEventForms,
   editingEventId,
   events,
+  isNewFormOpen,
   isLoading,
   isSupabaseReservation,
   newEventForm,
@@ -2095,6 +2347,7 @@ function ReservationEventsSection({
   onCreate,
   onDelete,
   onStartEdit,
+  onToggleNewForm,
   onToggleComplete,
   onUpdate,
   reservationName,
@@ -2105,6 +2358,7 @@ function ReservationEventsSection({
   editingEventForms: Record<string, ReservationEventForm>;
   editingEventId: string | null;
   events: ReservationEvent[];
+  isNewFormOpen: boolean;
   isLoading: boolean;
   isSupabaseReservation: boolean;
   newEventForm: ReservationEventForm;
@@ -2115,6 +2369,7 @@ function ReservationEventsSection({
   onCreate: () => void;
   onDelete: (event: ReservationEvent) => void;
   onStartEdit: (event: ReservationEvent) => void;
+  onToggleNewForm: () => void;
   onToggleComplete: (event: ReservationEvent) => void;
   onUpdate: (event: ReservationEvent) => void;
   reservationName: string;
@@ -2162,6 +2417,13 @@ function ReservationEventsSection({
         )}
       </div>
 
+      <div className="mt-4">
+        <button className="btn-outline px-3 py-2 text-sm" onClick={onToggleNewForm} type="button">
+          {isNewFormOpen ? "새 일정 등록 닫기" : "＋ 새 일정 등록"}
+        </button>
+      </div>
+
+      {isNewFormOpen ? (
       <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="text-sm font-black text-slate-800">새 일정 입력</h3>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -2241,6 +2503,8 @@ function ReservationEventsSection({
           </button>
         </div>
       </div>
+
+      ) : null}
 
       {isLoading ? (
         <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
@@ -2483,11 +2747,13 @@ function EvidenceFilesSection({
   deletingFileId,
   files,
   isLoading,
+  isUploadOpen,
   isSupabaseReservation,
   isUploading,
   onDelete,
   onDownload,
   onFileChange,
+  onToggleUpload,
   onUpload,
   selectedFile,
   uploadInputKey,
@@ -2495,11 +2761,13 @@ function EvidenceFilesSection({
   deletingFileId: string | null;
   files: ReservationFile[];
   isLoading: boolean;
+  isUploadOpen: boolean;
   isSupabaseReservation: boolean;
   isUploading: boolean;
   onDelete: (file: ReservationFile) => void;
   onDownload: (file: ReservationFile) => void;
   onFileChange: (file?: File) => void;
+  onToggleUpload: () => void;
   onUpload: () => void;
   selectedFile: File | null;
   uploadInputKey: string;
@@ -2513,7 +2781,13 @@ function EvidenceFilesSection({
             PDF, 이미지, 영상, 음성, 문서 파일을 30MB 이하로 업로드할 수 있습니다.
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <button className="btn-outline whitespace-nowrap px-3 py-2 text-sm" onClick={onToggleUpload} type="button">
+          {isUploadOpen ? "증거자료 업로드 닫기" : "＋ 증거자료 업로드"}
+        </button>
+      </div>
+
+      {isUploadOpen ? (
+        <div className="mt-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center">
           <input
             accept=".pdf,.jpg,.jpeg,.png,.webp,.mp4,.mp3,.wav,.doc,.docx,.hwp"
             className="w-full rounded-xl border border-slate-300 bg-white p-2 text-sm sm:w-72"
@@ -2531,7 +2805,7 @@ function EvidenceFilesSection({
             {isUploading ? "업로드 중" : "업로드"}
           </button>
         </div>
-      </div>
+      ) : null}
 
       {!isSupabaseReservation ? (
         <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
@@ -2620,6 +2894,9 @@ function DiagnosisResult({ reservation }: { reservation: Reservation }) {
   return (
     <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
       <h2 className="text-sm font-black text-slate-800">연결된 무료진단 결과</h2>
+      <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
+        <Info label="진단요약" value={diagnosisSummary || "진단요약 없음"} />
+      </div>
       <div className="mt-3 grid gap-3 md:grid-cols-3">
         <Info label="진단유형" value={diagnosisType} />
         <Info label="진단결과 ID" value={diagnosisResultId} />
@@ -2875,6 +3152,27 @@ function getTimelineCurrentStep(caseStatus?: string) {
   };
 
   return legacyStatusMap[normalizedStatus] ?? "접수";
+}
+
+function getCaseProgressInfo(caseStatus?: string) {
+  const step = getTimelineCurrentStep(caseStatus);
+  const index = Math.max(caseTimelineSteps.indexOf(step), 0);
+  const percent = Math.round(((index + 1) / caseTimelineSteps.length) * 100);
+
+  return { index, percent, step };
+}
+
+function getNextReservationEvent(events: ReservationEvent[]) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return sortReservationEvents(events).find(
+    (event) => !event.completed && new Date(`${event.event_date}T00:00`).getTime() >= today.getTime(),
+  );
+}
+
+function isImportantReservationEvent(event: ReservationEvent) {
+  return ["학폭위 개최", "의견서 제출", "행정심판 청구"].includes(event.event_type);
 }
 
 function getDiagnosisTypeCode(value?: string) {
