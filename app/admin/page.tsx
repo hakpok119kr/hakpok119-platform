@@ -193,6 +193,18 @@ type DashboardSummary = {
   fileCount: number | null;
 };
 
+type AiCaseInsight = {
+  caseHealthScore: number;
+  caseCompleteness: number;
+  evidenceSufficiency: number;
+  aiConfidence: number;
+  actionRiskLevel: "낮음" | "보통" | "높음" | "매우높음";
+  appealPotential: "낮음" | "보통" | "높음";
+  missingItems: string[];
+  priorityActions: string[];
+  warnings: string[];
+};
+
 type DetailSectionKey =
   | "reservationInfo"
   | "diagnosis"
@@ -366,6 +378,7 @@ export default function AdminPage() {
   const [deletingEvidenceFileId, setDeletingEvidenceFileId] = useState<string | null>(null);
   const [evidenceInputVersion, setEvidenceInputVersion] = useState(0);
   const [aiCaseSummaries, setAiCaseSummaries] = useState<Record<string, string>>({});
+  const [aiCaseInsights, setAiCaseInsights] = useState<Record<string, AiCaseInsight>>({});
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     events: [],
     consultLogs: [],
@@ -799,6 +812,27 @@ export default function AdminPage() {
       [caseId]: aiSummary,
     }));
     setMessage("AI 사건요약 초안이 생성되었습니다.");
+  }
+
+  function handleGenerateAiCaseInsight(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI 사건분석을 생성할 사건을 찾을 수 없습니다.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const insight = buildAiCaseInsight(reservation, logs, events, files);
+
+    setAiCaseInsights((current) => ({
+      ...current,
+      [caseId]: insight,
+    }));
+    setMessage("AI 사건분석 대시보드가 생성되었습니다.");
   }
 
   function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
@@ -1803,8 +1837,10 @@ export default function AdminPage() {
             <div>
               <CaseSummaryPanel events={selectedEvents} reservation={selectedReservation} />
               <AiAssistantSection
+                aiInsight={aiCaseInsights[selectedReservationKey]}
                 aiSummary={aiCaseSummaries[selectedReservationKey]}
                 onFeatureClick={handleAiFeatureClick}
+                onGenerateInsight={() => handleGenerateAiCaseInsight(selectedReservationKey)}
                 onGenerateSummary={() => handleGenerateAiCaseSummary(selectedReservationKey)}
               />
               <AccordionSection
@@ -2304,12 +2340,16 @@ function CaseSummaryPanel({ events, reservation }: { events: ReservationEvent[];
 }
 
 function AiAssistantSection({
+  aiInsight,
   aiSummary,
   onFeatureClick,
+  onGenerateInsight,
   onGenerateSummary,
 }: {
+  aiInsight?: AiCaseInsight;
   aiSummary?: string;
   onFeatureClick: (feature: "summary" | "evidence" | "draft") => void;
+  onGenerateInsight: () => void;
   onGenerateSummary: () => void;
 }) {
   const features = [
@@ -2317,6 +2357,11 @@ function AiAssistantSection({
       description: "상담기록, 일정, 무료진단 결과를 바탕으로 사건 개요를 정리합니다.",
       id: "summary" as const,
       title: "AI 사건요약 생성",
+    },
+    {
+      description: "사건 준비도, 증거충족도, 위험도와 우선업무를 규칙 기반으로 점검합니다.",
+      id: "insight" as const,
+      title: "AI 사건분석 생성",
     },
     {
       description: "업로드된 증거자료와 제출서류를 바탕으로 부족자료를 점검합니다.",
@@ -2336,12 +2381,24 @@ function AiAssistantSection({
         <h2 className="text-base font-black text-slate-900">AI 업무도우미</h2>
         <span className="text-xs font-bold text-slate-500">Ver.2.0 준비중</span>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {features.map((feature) => (
           <button
             className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-navy hover:bg-white hover:ring-2 hover:ring-navy/10"
             key={feature.id}
-            onClick={() => (feature.id === "summary" ? onGenerateSummary() : onFeatureClick(feature.id))}
+            onClick={() => {
+              if (feature.id === "summary") {
+                onGenerateSummary();
+                return;
+              }
+
+              if (feature.id === "insight") {
+                onGenerateInsight();
+                return;
+              }
+
+              onFeatureClick(feature.id);
+            }}
             type="button"
           >
             <span className="block text-sm font-black text-slate-900">{feature.title}</span>
@@ -2351,6 +2408,7 @@ function AiAssistantSection({
           </button>
         ))}
       </div>
+      {aiInsight ? <AiCaseInsightDashboard insight={aiInsight} /> : null}
       {aiSummary ? (
         <div className="mt-4 rounded-xl border border-navy/15 bg-navy/5 p-4">
           <p className="text-sm font-black text-slate-900">AI 사건요약 결과</p>
@@ -2360,6 +2418,72 @@ function AiAssistantSection({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function AiCaseInsightDashboard({ insight }: { insight: AiCaseInsight }) {
+  const metrics = [
+    { label: "AI 사건점수", suffix: "점", value: insight.caseHealthScore },
+    { label: "사건완성도", suffix: "%", value: insight.caseCompleteness },
+    { label: "증거충족도", suffix: "%", value: insight.evidenceSufficiency },
+    { label: "AI 신뢰도", suffix: "%", value: insight.aiConfidence },
+  ];
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-sm font-black text-slate-900">AI 사건분석 대시보드</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">현재 입력된 사건자료 기준 mock 분석 결과입니다.</p>
+        </div>
+        <div className="grid gap-2 text-xs font-black sm:grid-cols-2">
+          <span className={`rounded-full px-3 py-1 ${getRiskBadgeClass(insight.actionRiskLevel)}`}>
+            조치위험도: {insight.actionRiskLevel}
+          </span>
+          <span className={`rounded-full px-3 py-1 ${getAppealBadgeClass(insight.appealPotential)}`}>
+            행정심판 가능성: {insight.appealPotential}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <div className="rounded-xl border border-slate-200 bg-white p-3" key={metric.label}>
+            <div className="flex items-end justify-between gap-2">
+              <p className="text-xs font-black text-slate-500">{metric.label}</p>
+              <p className="text-lg font-black text-navy">
+                {metric.value}
+                {metric.suffix}
+              </p>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-navy" style={{ width: `${metric.value}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <AiInsightList items={insight.missingItems} title="부족자료" />
+        <AiInsightList items={insight.priorityActions} title="다음 우선업무" />
+        <AiInsightList items={insight.warnings} title="주의사항" />
+      </div>
+    </div>
+  );
+}
+
+function AiInsightList({ items, title }: { items: string[]; title: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <p className="text-xs font-black text-slate-500">{title}</p>
+      <ul className="mt-2 space-y-2 text-sm font-semibold leading-6 text-slate-700">
+        {items.map((item) => (
+          <li className="break-words" key={item}>
+            - {item}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -3601,6 +3725,105 @@ function getCaseChecklistItems(
   ];
 }
 
+function buildAiCaseInsight(
+  caseItem: Reservation,
+  logs: ReservationConsultLog[] = [],
+  events: ReservationEvent[] = [],
+  evidenceFiles: ReservationFile[] = [],
+): AiCaseInsight {
+  const consultationTexts = [
+    caseItem.consultation_type,
+    caseItem.consultationType,
+    caseItem.summary,
+    caseItem.consultation_log,
+    caseItem.content,
+    caseItem.admin_memo,
+    ...logs.map((log) => log.content),
+  ].filter(hasText);
+  const checklistItems = getCaseChecklistItems(caseItem, logs, events);
+  const completedChecklistCount = checklistItems.filter((item) => item.completed).length;
+  const checklistScore = Math.min(20, Math.round((completedChecklistCount / checklistItems.length) * 20));
+  const hasConsultation = logs.length > 0 || hasText(caseItem.consultation_log);
+  const hasEvidence = evidenceFiles.length > 0;
+  const hasEvents = events.length > 0;
+  const hasAdminMemo = hasText(caseItem.admin_memo);
+  const hasDiagnosis = Boolean(
+    hasText(caseItem.diagnosis_type) ||
+      hasText(caseItem.diagnosis_result_id) ||
+      hasText(caseItem.diagnosis_summary) ||
+      caseItem.diagnosis_payload,
+  );
+  const hasCaseSummary = hasText(caseItem.summary) || hasText(caseItem.content);
+
+  const caseHealthScore = clampScore(
+    (hasConsultation ? 20 : 0) +
+      (hasEvidence ? 20 : 0) +
+      (hasEvents ? 10 : 0) +
+      (hasAdminMemo ? 10 : 0) +
+      checklistScore +
+      (hasDiagnosis ? 10 : 0) +
+      (hasCaseSummary ? 10 : 0),
+  );
+  const caseCompleteness = caseHealthScore;
+  const evidenceSufficiency = getEvidenceSufficiency(evidenceFiles.length, hasConsultation, hasAdminMemo);
+  const aiConfidence = getAiInsightConfidence({
+    hasAdminMemo,
+    hasConsultation,
+    hasEvidence,
+    hasEvents,
+  });
+  const riskKeywordCount = getUniqueKeywordMatchCount(consultationTexts.join(" "), [
+    "지속",
+    "반복",
+    "고의",
+    "상해",
+    "진단서",
+    "협박",
+    "금품",
+    "사이버",
+    "성",
+    "따돌림",
+    "보복",
+    "공포",
+    "불안",
+    "전학",
+    "출석정지",
+  ]);
+  const actionRiskLevel = getActionRiskLevel(riskKeywordCount);
+  const appealKeywordCount = getUniqueKeywordMatchCount(
+    [caseItem.case_status, caseItem.consultation_type, caseItem.consultationType, caseItem.admin_memo].filter(hasText).join(" "),
+    ["조치결정", "불복", "행정심판", "생기부", "4호", "5호", "6호", "7호", "8호", "9호"],
+  );
+  const appealPotential = getAppealPotential(appealKeywordCount, actionRiskLevel);
+  const missingItems = [
+    !hasConsultation ? "상담기록 추가 필요" : "",
+    !hasEvidence ? "증거자료 등록 필요" : "",
+    !hasEvents ? "학폭위 또는 제출기한 일정 확인 필요" : "",
+    !hasAdminMemo ? "담당자 검토 메모 추가 필요" : "",
+    !hasDiagnosis ? "무료진단 결과 연결 필요" : "",
+  ].filter(hasText);
+  const priorityActions = [
+    !hasEvidence ? "증거자료 추가 등록" : "",
+    !hasEvents ? "학폭위 일정 또는 의견서 제출기한 확인" : "",
+    !hasConsultation ? "상담기록 보완" : "",
+    !hasAdminMemo ? "관리자 메모로 검토사항 정리" : "",
+    actionRiskLevel === "높음" || actionRiskLevel === "매우높음" ? "조치수위 및 생활기록부 영향 검토" : "",
+    appealPotential === "보통" || appealPotential === "높음" ? "행정심판 가능성 검토" : "",
+  ].filter(hasText);
+
+  return {
+    actionRiskLevel,
+    aiConfidence,
+    appealPotential,
+    caseCompleteness,
+    caseHealthScore,
+    evidenceSufficiency,
+    missingItems: missingItems.length > 0 ? missingItems : ["현재 필수 기초자료는 일부 확인되었습니다."],
+    priorityActions: priorityActions.length > 0 ? priorityActions : ["담당 행정사가 입력자료를 최종 검토합니다."],
+    warnings: ["본 분석은 mock 규칙 기반 분석이며, 최종 판단은 담당 행정사의 검토가 필요합니다."],
+  };
+}
+
 function buildAiCaseSummary(
   caseItem: Reservation,
   logs: ReservationConsultLog[] = [],
@@ -3704,6 +3927,100 @@ function buildAiCaseSummary(
 
 function hasText(value?: string | null) {
   return Boolean(value?.trim());
+}
+
+function clampScore(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getEvidenceSufficiency(evidenceCount: number, hasConsultation: boolean, hasAdminMemo: boolean) {
+  const baseScore = evidenceCount <= 0 ? 20 : evidenceCount === 1 ? 40 : evidenceCount === 2 ? 60 : 80;
+  const adjustedScore = baseScore + (hasConsultation ? 10 : 0) + (hasAdminMemo ? 10 : 0);
+  return clampScore(adjustedScore);
+}
+
+function getAiInsightConfidence({
+  hasAdminMemo,
+  hasConsultation,
+  hasEvidence,
+  hasEvents,
+}: {
+  hasAdminMemo: boolean;
+  hasConsultation: boolean;
+  hasEvidence: boolean;
+  hasEvents: boolean;
+}) {
+  const coreDataCount = [hasConsultation, hasEvidence, hasEvents].filter(Boolean).length;
+
+  if (hasConsultation && hasEvidence && hasEvents && hasAdminMemo) {
+    return 85;
+  }
+
+  if (coreDataCount >= 2) {
+    return 70;
+  }
+
+  if (coreDataCount === 1 || hasAdminMemo) {
+    return 50;
+  }
+
+  return 40;
+}
+
+function getUniqueKeywordMatchCount(text: string, keywords: string[]) {
+  return keywords.filter((keyword) => text.includes(keyword)).length;
+}
+
+function getActionRiskLevel(riskKeywordCount: number): AiCaseInsight["actionRiskLevel"] {
+  if (riskKeywordCount >= 6) {
+    return "매우높음";
+  }
+
+  if (riskKeywordCount >= 4) {
+    return "높음";
+  }
+
+  if (riskKeywordCount >= 2) {
+    return "보통";
+  }
+
+  return "낮음";
+}
+
+function getAppealPotential(
+  appealKeywordCount: number,
+  actionRiskLevel: AiCaseInsight["actionRiskLevel"],
+): AiCaseInsight["appealPotential"] {
+  if (appealKeywordCount >= 2) {
+    return "높음";
+  }
+
+  if (appealKeywordCount === 1 || actionRiskLevel === "높음" || actionRiskLevel === "매우높음") {
+    return "보통";
+  }
+
+  return "낮음";
+}
+
+function getRiskBadgeClass(level: AiCaseInsight["actionRiskLevel"]) {
+  const classByLevel: Record<AiCaseInsight["actionRiskLevel"], string> = {
+    낮음: "bg-emerald-50 text-emerald-700",
+    보통: "bg-amber-50 text-amber-700",
+    높음: "bg-orange-50 text-orange-700",
+    매우높음: "bg-rose-50 text-rose-700",
+  };
+
+  return classByLevel[level];
+}
+
+function getAppealBadgeClass(level: AiCaseInsight["appealPotential"]) {
+  const classByLevel: Record<AiCaseInsight["appealPotential"], string> = {
+    낮음: "bg-slate-100 text-slate-600",
+    보통: "bg-amber-50 text-amber-700",
+    높음: "bg-rose-50 text-rose-700",
+  };
+
+  return classByLevel[level];
 }
 
 function getGeneralizedPartyLabel(studentType?: string) {
