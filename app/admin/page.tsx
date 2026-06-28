@@ -212,6 +212,12 @@ type AiCaseInsight = {
     status: "충족" | "부족" | "확인필요";
   }[];
   overallOpinion: string;
+  coachAdvice: {
+    priority: string[];
+    recommendations: string[];
+    caution: string[];
+    expectedNextStep: string;
+  };
 };
 
 type DetailSectionKey =
@@ -2467,6 +2473,56 @@ function AiCaseInsightDashboard({ insight }: { insight: AiCaseInsight }) {
         </p>
       </div>
 
+      <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm font-black text-slate-900">🎯 AI 코치</p>
+            <p className="mt-1 text-xs font-bold text-slate-600">
+              현재 사건에서는 다음 순서로 진행하는 것을 추천합니다.
+            </p>
+          </div>
+          <div className="rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm font-black text-blue-800">
+            다음 추천 단계
+            <span className="mx-2 text-blue-400">↓</span>
+            {insight.coachAdvice.expectedNextStep}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className="rounded-xl border border-blue-100 bg-white p-3">
+            <p className="text-xs font-black text-slate-500">우선순위</p>
+            <ol className="mt-3 space-y-2 text-sm font-bold text-slate-700">
+              {insight.coachAdvice.priority.map((item, index) => (
+                <li className="flex gap-2" key={`${item}-${index}`}>
+                  <span className="font-black text-blue-700">{index + 1}.</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className="rounded-xl border border-blue-100 bg-white p-3">
+            <p className="text-xs font-black text-slate-500">추천업무</p>
+            <ul className="mt-3 space-y-2 text-sm font-bold text-slate-700">
+              {insight.coachAdvice.recommendations.map((item, index) => (
+                <li className="break-words" key={`${item}-${index}`}>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-black text-slate-500">주의사항</p>
+            <ul className="mt-3 space-y-2 text-sm font-bold leading-6 text-slate-700">
+              {insight.coachAdvice.caution.map((item, index) => (
+                <li className="break-words" key={`${item}-${index}`}>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
           <div className="rounded-xl border border-slate-200 bg-white p-3" key={metric.label}>
@@ -3914,6 +3970,14 @@ function buildAiCaseInsight(
     actionRiskLevel === "높음" || actionRiskLevel === "매우높음" ? "조치수위 및 생활기록부 영향 검토" : "",
     appealPotential === "보통" || appealPotential === "높음" ? "행정심판 가능성 검토" : "",
   ].filter(hasText);
+  const coachAdvice = buildAiCoachAdvice({
+    actionRiskLevel,
+    appealPotential,
+    hasAdminMemo,
+    hasConsultation,
+    hasEvidence,
+    hasEvents,
+  });
   const overallOpinion = buildOverallOpinion({
     actionRiskLevel,
     aiConfidence,
@@ -3941,6 +4005,7 @@ function buildAiCaseInsight(
     caseHealthScore,
     evidenceSufficiency,
     missingItems: missingItems.length > 0 ? missingItems : ["현재 필수 기초자료는 일부 확인되었습니다."],
+    coachAdvice,
     overallOpinion,
     priorityActions: priorityActions.length > 0 ? priorityActions : ["담당 행정사가 입력자료를 최종 검토합니다."],
     warnings: ["본 분석은 mock 규칙 기반 분석이며, 최종 판단은 담당 행정사의 검토가 필요합니다."],
@@ -4088,6 +4153,69 @@ function getAiInsightConfidence({
   }
 
   return 40;
+}
+
+function buildAiCoachAdvice({
+  actionRiskLevel,
+  appealPotential,
+  hasAdminMemo,
+  hasConsultation,
+  hasEvidence,
+  hasEvents,
+}: {
+  actionRiskLevel: AiCaseInsight["actionRiskLevel"];
+  appealPotential: AiCaseInsight["appealPotential"];
+  hasAdminMemo: boolean;
+  hasConsultation: boolean;
+  hasEvidence: boolean;
+  hasEvents: boolean;
+}): AiCaseInsight["coachAdvice"] {
+  const recommendations = [
+    !hasConsultation ? "상담기록을 먼저 작성하세요." : "",
+    !hasConsultation ? "사실관계를 먼저 정리하세요." : "",
+    !hasEvidence ? "CCTV 확보" : "",
+    !hasEvidence ? "학생 진술서 확보" : "",
+    !hasEvidence ? "목격자 확보" : "",
+    !hasEvidence ? "학교자료 확보" : "",
+    !hasEvents ? "학폭위 일정 확인" : "",
+    !hasEvents ? "제출기한 등록" : "",
+    !hasAdminMemo ? "사건 핵심쟁점 메모" : "",
+    !hasAdminMemo ? "담당자 검토사항 작성" : "",
+    actionRiskLevel !== "낮음" ? "조치수위 검토" : "",
+    actionRiskLevel !== "낮음" ? "생활기록부 영향 검토" : "",
+    appealPotential !== "낮음" ? "처분사유 확인" : "",
+    appealPotential !== "낮음" ? "불복 가능성 검토" : "",
+  ].filter(hasText);
+  const priority = [
+    !hasEvidence ? "증거자료 확보" : "",
+    !hasConsultation ? "상담기록 보완" : "",
+    !hasEvents ? "학폭위 일정 등록" : "",
+    !hasAdminMemo ? "사건 핵심쟁점 메모" : "",
+    actionRiskLevel !== "낮음" ? "생활기록부 영향 검토" : "",
+    appealPotential !== "낮음" ? "행정심판 검토" : "",
+    "의견서 작성",
+  ].filter(hasText);
+  const uniquePriority = Array.from(new Set(priority));
+  const uniqueRecommendations = Array.from(new Set(recommendations));
+  const expectedNextStepByPriority: Record<string, string> = {
+    "증거자료 확보": "증거자료 등록",
+    "상담기록 보완": "상담기록 작성",
+    "학폭위 일정 등록": "학폭위 일정 확인",
+    "사건 핵심쟁점 메모": "관리자 메모 작성",
+    "생활기록부 영향 검토": "생활기록부 영향 검토",
+    "행정심판 검토": "행정심판 검토",
+    "의견서 작성": "의견서 작성",
+  };
+
+  return {
+    caution: [
+      "현재 자료만으로 학교폭력 해당 여부를 단정하지 마십시오.",
+      "증거 확보 후 의견서 작성을 권장합니다.",
+    ],
+    expectedNextStep: expectedNextStepByPriority[uniquePriority[0]] ?? "의견서 작성",
+    priority: uniquePriority,
+    recommendations: uniqueRecommendations.length > 0 ? uniqueRecommendations : ["입력자료를 최종 점검하고 의견서 작성을 준비하세요."],
+  };
 }
 
 function buildOverallOpinion(
