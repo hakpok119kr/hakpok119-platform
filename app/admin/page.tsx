@@ -490,15 +490,25 @@ export default function AdminPage() {
   }
 
   async function createConsultLog(reservation: Reservation) {
-    if (!reservation.id || dataSource !== "supabase") {
+    const reservationId = reservation.id;
+
+    if (!reservationId || dataSource !== "supabase") {
       setMessage("Supabase에 저장된 예약만 상담기록을 저장할 수 있습니다.");
+      return;
+    }
+
+    if (!isUuid(reservationId)) {
+      setMessage("상담기록 저장 실패: 예약 ID가 올바른 UUID 형식이 아닙니다.");
       return;
     }
 
     const key = getReservationKey(reservation);
     const form = newConsultLogForms[key] ?? createConsultLogForm(reservation.manager);
+    const consultationType = form.consultation_type || "전화";
+    const counselor = form.counselor.trim() || null;
+    const content = form.content.trim();
 
-    if (!form.content.trim()) {
+    if (!content) {
       setMessage("상담내용을 입력해 주세요.");
       return;
     }
@@ -512,26 +522,67 @@ export default function AdminPage() {
         throw new Error("Missing Supabase browser environment variables.");
       }
 
-      const { error } = await supabase.from("reservation_consult_logs").insert({
-        reservation_id: reservation.id,
-        consultation_type: form.consultation_type || "전화",
-        counselor: form.counselor.trim() || null,
-        content: form.content.trim(),
+      console.log({
+        reservationId,
+        consultationType,
+        counselor,
+        content,
+      });
+
+      const { data, error } = await supabase
+        .from("reservation_consult_logs")
+        .insert({
+          reservation_id: reservationId,
+          consultation_type: consultationType,
+          counselor,
+          content,
+        })
+        .select("*");
+
+      console.log({
+        data,
+        error,
       });
 
       if (error) {
+        console.error(error);
+        console.error(error.message);
+        console.error(error.details);
+        console.error(error.code);
         throw error;
+      }
+
+      const { data: refreshedLogs, error: refreshError } = await supabase
+        .from("reservation_consult_logs")
+        .select("*")
+        .eq("reservation_id", reservationId)
+        .order("created_at", { ascending: false });
+
+      console.log({
+        data: refreshedLogs,
+        error: refreshError,
+      });
+
+      if (refreshError) {
+        console.error(refreshError);
+        console.error(refreshError.message);
+        console.error(refreshError.details);
+        console.error(refreshError.code);
+        throw refreshError;
       }
 
       setNewConsultLogForms((current) => ({
         ...current,
         [key]: createConsultLogForm(reservation.manager),
       }));
-      await loadConsultLogs(reservation.id);
+      setConsultLogsByReservation((current) => ({
+        ...current,
+        [reservationId]: (refreshedLogs ?? []) as ReservationConsultLog[],
+      }));
       setMessage("상담기록이 저장되었습니다.");
     } catch (error) {
       console.error("Failed to create consult log:", error);
-      setMessage("상담기록 저장에 실패했습니다.");
+      setMessage(`상담기록 저장 실패: ${getSupabaseErrorMessage(error)}`);
     } finally {
       setSavingConsultLogId(null);
     }
@@ -1076,7 +1127,7 @@ export default function AdminPage() {
                 editingLogForms={editingConsultLogForms}
                 editingLogId={editingConsultLogId}
                 isLoading={loadingConsultLogsId === selectedReservation.id}
-                isSupabaseReservation={dataSource === "supabase" && Boolean(selectedReservation.id)}
+                isSupabaseReservation={dataSource === "supabase" && isUuid(selectedReservation.id)}
                 logs={selectedReservation.id ? consultLogsByReservation[selectedReservation.id] ?? [] : []}
                 newLogForm={
                   newConsultLogForms[getReservationKey(selectedReservation)] ??
@@ -1647,6 +1698,24 @@ function sanitizeFileName(fileName: string) {
 
 function getEvidenceStoragePath(filePath: string) {
   return filePath.startsWith(`${EVIDENCE_BUCKET}/`) ? filePath.slice(EVIDENCE_BUCKET.length + 1) : filePath;
+}
+
+function getSupabaseErrorMessage(error: unknown) {
+  if (typeof error === "object" && error && "message" in error) {
+    return String((error as { message?: unknown }).message || "알 수 없는 오류");
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error || "알 수 없는 오류");
+}
+
+function isUuid(value?: string | null) {
+  return Boolean(
+    value?.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
+  );
 }
 
 function normalizeSearchText(value: unknown) {
