@@ -169,6 +169,7 @@ type ReservationEvent = {
 
 type WorkflowSuggestion = {
   counselor: string;
+  current_step: string;
   event_type: string;
   message: string;
   reservation_id: string;
@@ -197,6 +198,7 @@ type DetailSectionKey =
   | "diagnosis"
   | "consultLogs"
   | "timeline"
+  | "checklist"
   | "events"
   | "evidence"
   | "adminMemo";
@@ -206,6 +208,7 @@ const defaultDetailSectionOpen: Record<DetailSectionKey, boolean> = {
   diagnosis: false,
   consultLogs: true,
   timeline: true,
+  checklist: true,
   events: false,
   evidence: false,
   adminMemo: false,
@@ -498,16 +501,20 @@ export default function AdminPage() {
     }));
   }
 
-  function setWorkflowSuggestion(reservation: Reservation, nextEventType?: string | null) {
+  function setWorkflowSuggestion(reservation: Reservation, nextEventType?: string | null, currentStatus?: string | null) {
     const reservationId = reservation.id;
     if (!reservationId || !nextEventType) {
       return;
     }
+    const currentStep = getTimelineCurrentStep(
+      currentStatus ?? getCurrentReservationById(reservationId)?.case_status ?? reservation.case_status,
+    );
 
     setWorkflowSuggestions((current) => ({
       ...current,
       [reservationId]: {
         counselor: reservation.manager || "",
+        current_step: currentStep,
         event_type: nextEventType,
         message: `다음 단계로 ${nextEventType} 일정을 생성하시겠습니까?`,
         reservation_id: reservationId,
@@ -765,6 +772,13 @@ export default function AdminPage() {
     }
   }
 
+  function handleAiFeatureClick(feature: "summary" | "evidence" | "draft") {
+    console.log("AI placeholder clicked:", feature);
+    const notice = "Ver.2.0에서 제공 예정인 기능입니다.";
+    setMessage(notice);
+    window.alert(notice);
+  }
+
   function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
     const key = getReservationKey(reservation);
     setSelectedEvidenceFiles((current) => ({
@@ -959,7 +973,11 @@ export default function AdminPage() {
           consultationTargetStatus,
           "상담기록 저장으로 사건상태가 1차상담으로 변경되었습니다.",
         );
-        setWorkflowSuggestion(reservation, "자료요청");
+        setWorkflowSuggestion(
+          reservation,
+          "자료요청",
+          promotionResult === "changed" ? consultationTargetStatus : undefined,
+        );
         if (promotionResult === "skipped") {
           setMessage("상담기록이 저장되었습니다. 다음 단계로 자료요청 일정을 생성할 수 있습니다.");
         }
@@ -1292,8 +1310,9 @@ export default function AdminPage() {
       const targetStatus = getEventWorkflowTargetStatus(event.event_type);
       const nextEventType = getNextWorkflowEventType(event.event_type);
 
+      let promotionResult: "changed" | "skipped" | "failed" = "skipped";
       if (reservation && targetStatus) {
-        const promotionResult = await promoteCaseStatusIfHigher(
+        promotionResult = await promoteCaseStatusIfHigher(
           reservation,
           targetStatus,
           `${event.event_type} 완료로 사건상태가 ${targetStatus}로 변경되었습니다.`,
@@ -1306,7 +1325,7 @@ export default function AdminPage() {
       }
 
       if (reservation && nextEventType) {
-        setWorkflowSuggestion(reservation, nextEventType);
+        setWorkflowSuggestion(reservation, nextEventType, promotionResult === "changed" ? targetStatus : undefined);
       }
     } catch (error) {
       console.error("Failed to toggle reservation event:", error);
@@ -1706,6 +1725,7 @@ export default function AdminPage() {
           <button className="btn-outline whitespace-nowrap" onClick={resetFilters} type="button">
             필터 초기화
           </button>
+          </div>
         </div>
         <p className="mt-3 text-sm font-semibold text-slate-600">
           전체 {reservations.length}건 중 {filteredReservations.length}건 표시
@@ -1761,6 +1781,7 @@ export default function AdminPage() {
           {selectedReservation ? (
             <div>
               <CaseSummaryPanel events={selectedEvents} reservation={selectedReservation} />
+              <AiAssistantSection onFeatureClick={handleAiFeatureClick} />
               <AccordionSection
                 isOpen={openDetailSections.reservationInfo}
                 onToggle={() => toggleDetailSection("reservationInfo")}
@@ -1886,6 +1907,17 @@ export default function AdminPage() {
                 title="사건 진행 타임라인"
               >
                 <CaseTimeline caseStatus={selectedReservation.case_status} />
+              </AccordionSection>
+              <AccordionSection
+                isOpen={openDetailSections.checklist}
+                onToggle={() => toggleDetailSection("checklist")}
+                title="사건 체크리스트"
+              >
+                <CaseChecklist
+                  events={selectedEvents}
+                  logs={selectedConsultLogs}
+                  reservation={selectedReservation}
+                />
               </AccordionSection>
               <AccordionSection
                 count={selectedEvents.length}
@@ -2241,6 +2273,100 @@ function CaseSummaryPanel({ events, reservation }: { events: ReservationEvent[];
             {progress.index + 1}/{caseTimelineSteps.length} 단계
           </p>
         </div>
+      </div>
+    </section>
+  );
+}
+
+function AiAssistantSection({
+  onFeatureClick,
+}: {
+  onFeatureClick: (feature: "summary" | "evidence" | "draft") => void;
+}) {
+  const features = [
+    {
+      description: "상담기록, 일정, 무료진단 결과를 바탕으로 사건 개요를 정리합니다.",
+      id: "summary" as const,
+      title: "AI 사건요약",
+    },
+    {
+      description: "업로드된 증거자료와 제출서류를 바탕으로 부족자료를 점검합니다.",
+      id: "evidence" as const,
+      title: "AI 증거분석",
+    },
+    {
+      description: "사건 요약과 상담기록을 바탕으로 의견서 초안을 작성합니다.",
+      id: "draft" as const,
+      title: "AI 의견서 작성",
+    },
+  ];
+
+  return (
+    <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-base font-black text-slate-900">AI 업무도우미</h2>
+        <span className="text-xs font-bold text-slate-500">Ver.2.0 준비중</span>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {features.map((feature) => (
+          <button
+            className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-navy hover:bg-white hover:ring-2 hover:ring-navy/10"
+            key={feature.id}
+            onClick={() => onFeatureClick(feature.id)}
+            type="button"
+          >
+            <span className="block text-sm font-black text-slate-900">{feature.title}</span>
+            <span className="mt-2 block break-words text-xs font-semibold leading-5 text-slate-600">
+              {feature.description}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CaseChecklist({
+  events,
+  logs,
+  reservation,
+}: {
+  events: ReservationEvent[];
+  logs: ReservationConsultLog[];
+  reservation: Reservation;
+}) {
+  const items = getCaseChecklistItems(reservation, logs, events);
+  const completedCount = items.filter((item) => item.completed).length;
+  const percent = Math.round((completedCount / items.length) * 100);
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-sm font-black text-slate-800">사건 체크리스트</h2>
+          <p className="mt-1 text-sm font-bold text-slate-600">
+            체크리스트 {completedCount}/{items.length} 완료
+          </p>
+        </div>
+        <p className="text-2xl font-black text-navy">{percent}%</p>
+      </div>
+      <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-200">
+        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {items.map((item) => (
+          <div
+            className={`rounded-xl border p-3 text-sm font-bold ${
+              item.completed
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-slate-200 bg-white text-slate-600"
+            }`}
+            key={item.label}
+          >
+            <span className="mr-2">{item.completed ? "☑" : "☐"}</span>
+            <span className="break-words">{item.label}</span>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -2627,8 +2753,31 @@ function ReservationEventsSection({
       </div>
 
       {workflowSuggestion ? (
-        <div className="mt-4 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-bold text-blue-950">{workflowSuggestion.message}</p>
+        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <p className="text-sm font-black text-blue-950">{workflowSuggestion.message}</p>
+          <dl className="mt-3 grid gap-2 text-xs font-bold text-blue-900 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="rounded-lg bg-white/70 p-2">
+              <dt className="text-blue-600">현재 단계</dt>
+              <dd className="mt-1 break-words">{workflowSuggestion.current_step}</dd>
+            </div>
+            <div className="rounded-lg bg-white/70 p-2">
+              <dt className="text-blue-600">다음 단계</dt>
+              <dd className="mt-1 break-words">{workflowSuggestion.event_type}</dd>
+            </div>
+            <div className="rounded-lg bg-white/70 p-2">
+              <dt className="text-blue-600">생성될 제목</dt>
+              <dd className="mt-1 break-words">{workflowSuggestion.title}</dd>
+            </div>
+            <div className="rounded-lg bg-white/70 p-2">
+              <dt className="text-blue-600">담당자</dt>
+              <dd className="mt-1 break-words">{workflowSuggestion.counselor || "-"}</dd>
+            </div>
+            <div className="rounded-lg bg-white/70 p-2">
+              <dt className="text-blue-600">예정일</dt>
+              <dd className="mt-1">오늘</dd>
+            </div>
+          </dl>
+          <div className="mt-3 flex justify-end">
           <button
             className="btn-primary whitespace-nowrap px-3 py-2 text-sm"
             disabled={isCreatingWorkflowEvent}
@@ -2637,6 +2786,7 @@ function ReservationEventsSection({
           >
             {isCreatingWorkflowEvent ? "생성 중..." : `${workflowSuggestion.event_type} 일정 생성`}
           </button>
+          </div>
         </div>
       ) : null}
 
@@ -3373,6 +3523,45 @@ function getCaseStatusRank(caseStatus?: string) {
   const step = getTimelineCurrentStep(caseStatus);
   const index = caseTimelineSteps.indexOf(step);
   return index >= 0 ? index + 1 : 1;
+}
+
+function getCaseChecklistItems(
+  reservation: Reservation,
+  logs: ReservationConsultLog[] = [],
+  events: ReservationEvent[] = [],
+) {
+  const hasCompletedEvent = (...eventTypes: string[]) =>
+    events.some((event) => event.completed && eventTypes.includes(event.event_type));
+  const statusRank = getCaseStatusRank(reservation.case_status);
+  const submittedDocuments = asText(reservation.submitted_documents);
+  const hasOpinionDocument = /의견서|진술서|소명서/.test(submittedDocuments);
+
+  return [
+    { completed: logs.length > 0, label: "상담 완료" },
+    { completed: hasCompletedEvent("자료요청") || statusRank >= getCaseStatusRank("자료요청"), label: "자료요청 완료" },
+    {
+      completed: hasCompletedEvent("자료제출") || statusRank >= getCaseStatusRank("자료검토"),
+      label: "자료수신/자료제출 확인",
+    },
+    {
+      completed: hasCompletedEvent("의견서 작성") || statusRank >= getCaseStatusRank("심의준비"),
+      label: "의견서 작성",
+    },
+    {
+      completed:
+        hasCompletedEvent("의견서 제출") || (statusRank >= getCaseStatusRank("심의준비") && hasOpinionDocument),
+      label: "의견서 제출",
+    },
+    { completed: hasCompletedEvent("학폭위 개최") || statusRank >= getCaseStatusRank("심의완료"), label: "학폭위 개최" },
+    { completed: hasCompletedEvent("조치결정") || statusRank >= getCaseStatusRank("심의완료"), label: "조치결정 확인" },
+    {
+      completed:
+        hasCompletedEvent("행정심판 검토", "행정심판 청구") ||
+        statusRank >= getCaseStatusRank("행정심판검토"),
+      label: "행정심판 검토",
+    },
+    { completed: reservation.case_status === "종결" || hasCompletedEvent("종결"), label: "종결" },
+  ];
 }
 
 function getConsultationWorkflowTargetStatus(consultationType: string) {
