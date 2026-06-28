@@ -189,6 +189,7 @@ export default function AdminPage() {
   const [caseStatusFilter, setCaseStatusFilter] = useState("");
   const [managerFilter, setManagerFilter] = useState("");
   const [diagnosisTypeFilter, setDiagnosisTypeFilter] = useState("");
+  const [newConsultationLogs, setNewConsultationLogs] = useState<Record<string, string>>({});
 
   const filteredReservations = useMemo(() => {
     const keyword = normalizeSearchText(searchKeyword);
@@ -318,6 +319,35 @@ export default function AdminPage() {
     setReservations((current) =>
       current.map((item) => (getReservationKey(item) === getReservationKey(reservation) ? { ...item, [field]: value } : item)),
     );
+  }
+
+  function updateNewConsultationLog(reservation: Reservation, value: string) {
+    const key = getReservationKey(reservation);
+    setNewConsultationLogs((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function appendConsultationLog(reservation: Reservation) {
+    const key = getReservationKey(reservation);
+    const newLog = newConsultationLogs[key]?.trim();
+
+    if (!newLog) {
+      setMessage("추가할 상담기록을 입력해 주세요.");
+      return;
+    }
+
+    const currentLog = asText(reservation.consultation_log).trimEnd();
+    const timestampedLog = `[${formatConsultationLogDate(new Date())}] ${newLog}`;
+    const nextLog = currentLog ? `${currentLog}\n${timestampedLog}` : timestampedLog;
+
+    updateLocalField(reservation, "consultation_log", nextLog);
+    setNewConsultationLogs((current) => ({
+      ...current,
+      [key]: "",
+    }));
+    setMessage("");
   }
 
   async function saveReservation(reservation: Reservation) {
@@ -612,6 +642,27 @@ export default function AdminPage() {
                   />
                 </Field>
                 <div className="md:col-span-2">
+                  <Field label="새 상담기록">
+                    <div className="space-y-2">
+                      <textarea
+                        className="min-h-24 w-full rounded-xl border border-slate-300 p-3"
+                        onChange={(event) => updateNewConsultationLog(selectedReservation, event.target.value)}
+                        placeholder="새로 추가할 상담기록을 입력해 주세요."
+                        value={newConsultationLogs[getReservationKey(selectedReservation)] || ""}
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          className="btn-outline"
+                          onClick={() => appendConsultationLog(selectedReservation)}
+                          type="button"
+                        >
+                          상담기록 추가
+                        </button>
+                      </div>
+                    </div>
+                  </Field>
+                </div>
+                <div className="md:col-span-2">
                   <Field label="관리자 메모">
                     <textarea
                       className="min-h-32 w-full rounded-xl border border-slate-300 p-3"
@@ -725,6 +776,16 @@ function formatDate(value?: string) {
 
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ko-KR");
+}
+
+function formatConsultationLogDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 function normalizeSearchText(value: unknown) {
