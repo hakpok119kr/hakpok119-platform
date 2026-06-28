@@ -70,17 +70,17 @@ const editableFields: EditableReservationField[] = [
 ];
 
 const reservationStatusOptions = ["접수", "확인중", "상담확정", "상담완료", "수임검토", "종결"];
-const caseStatusOptions = [
-  "상담대기",
+const caseTimelineSteps = [
   "접수",
-  "조사중",
   "자료요청",
-  "상담완료",
-  "수임검토",
-  "수임진행",
-  "행정심판",
+  "자료검토",
+  "1차상담",
+  "심의준비",
+  "심의완료",
+  "행정심판검토",
   "종결",
 ];
+const caseStatusOptions = ["상담대기", ...caseTimelineSteps];
 const managerOptions = ["대표행정사", "학교폭력 행정팀", "김행정 행정사"];
 const diagnosisTypeOptions = ["D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08"];
 
@@ -576,6 +576,7 @@ export default function AdminPage() {
               </div>
 
               <DiagnosisResult reservation={selectedReservation} />
+              <CaseTimeline caseStatus={selectedReservation.case_status} />
 
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="예약상태">
@@ -693,6 +694,56 @@ export default function AdminPage() {
   );
 }
 
+function CaseTimeline({ caseStatus }: { caseStatus?: string }) {
+  const currentStep = getTimelineCurrentStep(caseStatus);
+  const currentStepIndex = caseTimelineSteps.indexOf(currentStep);
+  const normalizedStatus = caseStatus?.trim() || DEFAULT_CASE_STATUS;
+  const statusLabel = normalizedStatus === DEFAULT_CASE_STATUS ? "상담대기 · 1차상담 전" : normalizedStatus;
+
+  return (
+    <section className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-sm font-black text-slate-800">사건 진행 타임라인</h2>
+        <p className="text-xs font-bold text-slate-500">현재 상태: {statusLabel}</p>
+      </div>
+      <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {caseTimelineSteps.map((step, index) => {
+          const isCurrent = step === currentStep;
+          const isCompleted = currentStepIndex > index;
+
+          return (
+            <li
+              className={`rounded-xl border p-3 ${
+                isCurrent
+                  ? "border-navy bg-white text-navy ring-2 ring-navy/10"
+                  : isCompleted
+                    ? "border-slate-300 bg-white text-slate-700"
+                    : "border-slate-200 bg-slate-100 text-slate-500"
+              }`}
+              key={step}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${
+                    isCurrent
+                      ? "bg-navy text-white"
+                      : isCompleted
+                        ? "bg-slate-700 text-white"
+                        : "bg-white text-slate-500"
+                  }`}
+                >
+                  {index + 1}
+                </span>
+                <span className="text-sm font-black">{step}</span>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 function DiagnosisResult({ reservation }: { reservation: Reservation }) {
   const diagnosisType = reservation.diagnosis_type || "";
   const diagnosisResultId = reservation.diagnosis_result_id || "";
@@ -790,6 +841,28 @@ function formatConsultationLogDate(date: Date) {
 
 function normalizeSearchText(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function getTimelineCurrentStep(caseStatus?: string) {
+  const normalizedStatus = caseStatus?.trim();
+
+  if (!normalizedStatus || normalizedStatus === DEFAULT_CASE_STATUS) {
+    return "접수";
+  }
+
+  if (caseTimelineSteps.includes(normalizedStatus)) {
+    return normalizedStatus;
+  }
+
+  const legacyStatusMap: Record<string, string> = {
+    조사중: "자료검토",
+    상담완료: "1차상담",
+    수임검토: "심의준비",
+    수임진행: "심의준비",
+    행정심판: "행정심판검토",
+  };
+
+  return legacyStatusMap[normalizedStatus] ?? "접수";
 }
 
 function getDiagnosisTypeCode(value?: string) {
