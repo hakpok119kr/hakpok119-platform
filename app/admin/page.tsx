@@ -211,6 +211,7 @@ type AiCaseInsight = {
     reason: string;
     status: "충족" | "부족" | "확인필요";
   }[];
+  overallOpinion: string;
 };
 
 type DetailSectionKey =
@@ -2459,6 +2460,13 @@ function AiCaseInsightDashboard({ insight }: { insight: AiCaseInsight }) {
         </div>
       </div>
 
+      <div className="mt-4 rounded-xl border border-navy/15 bg-white p-4">
+        <p className="text-sm font-black text-slate-900">AI 종합의견</p>
+        <p className="mt-3 whitespace-pre-wrap break-words text-sm font-semibold leading-7 text-slate-700">
+          {insight.overallOpinion}
+        </p>
+      </div>
+
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
           <div className="rounded-xl border border-slate-200 bg-white p-3" key={metric.label}>
@@ -3906,6 +3914,16 @@ function buildAiCaseInsight(
     actionRiskLevel === "높음" || actionRiskLevel === "매우높음" ? "조치수위 및 생활기록부 영향 검토" : "",
     appealPotential === "보통" || appealPotential === "높음" ? "행정심판 가능성 검토" : "",
   ].filter(hasText);
+  const overallOpinion = buildOverallOpinion({
+    actionRiskLevel,
+    aiConfidence,
+    appealPotential,
+    caseCompleteness,
+    caseHealthScore,
+    evidenceSufficiency,
+    missingItems,
+    priorityActions,
+  });
 
   return {
     actionRiskLevel,
@@ -3923,6 +3941,7 @@ function buildAiCaseInsight(
     caseHealthScore,
     evidenceSufficiency,
     missingItems: missingItems.length > 0 ? missingItems : ["현재 필수 기초자료는 일부 확인되었습니다."],
+    overallOpinion,
     priorityActions: priorityActions.length > 0 ? priorityActions : ["담당 행정사가 입력자료를 최종 검토합니다."],
     warnings: ["본 분석은 mock 규칙 기반 분석이며, 최종 판단은 담당 행정사의 검토가 필요합니다."],
   };
@@ -4069,6 +4088,61 @@ function getAiInsightConfidence({
   }
 
   return 40;
+}
+
+function buildOverallOpinion(
+  insight: Pick<
+    AiCaseInsight,
+    | "actionRiskLevel"
+    | "aiConfidence"
+    | "appealPotential"
+    | "caseCompleteness"
+    | "caseHealthScore"
+    | "evidenceSufficiency"
+    | "missingItems"
+    | "priorityActions"
+  >,
+) {
+  const scoreOpinion =
+    insight.caseHealthScore >= 80
+      ? "현재 사건자료가 비교적 충실하게 정리되어 있어 의견서 작성 또는 심의 준비 단계로 진행할 수 있습니다."
+      : insight.caseHealthScore >= 60
+        ? "기본 사건자료는 일부 정리되어 있으나, 증거자료와 일정 등 보완자료를 추가 확인하는 것이 좋습니다."
+        : insight.caseHealthScore >= 40
+          ? "현재 사건자료가 일부 부족하여 추가 상담기록, 증거자료, 일정 확인이 우선 필요합니다."
+          : "현재 입력자료가 부족하여 사건 판단이나 문서작성에 앞서 기본자료 보완이 필요합니다.";
+  const evidenceOpinion =
+    insight.evidenceSufficiency < 50
+      ? "특히 증거자료가 부족하여 피해 주장 또는 사실관계 입증 가능성 검토가 제한될 수 있습니다."
+      : insight.evidenceSufficiency < 80
+        ? "일부 증거자료는 확보된 것으로 보이나, 핵심 입증자료가 충분한지 추가 확인이 필요합니다."
+        : "증거자료는 비교적 충실하게 등록되어 있는 것으로 보입니다.";
+  const riskOpinionByLevel: Record<AiCaseInsight["actionRiskLevel"], string> = {
+    낮음: "현재 입력자료 기준 조치위험도는 낮은 편으로 표시됩니다.",
+    보통: "조치위험도는 보통 수준으로, 사실관계와 증거자료에 따라 판단이 달라질 수 있습니다.",
+    높음: "조치위험도가 높게 표시되므로 조치수위와 생활기록부 영향을 함께 검토할 필요가 있습니다.",
+    매우높음: "조치위험도가 매우 높게 표시되므로 심의 전 대응전략과 제출자료를 신속히 점검해야 합니다.",
+  };
+  const appealOpinionByLevel: Record<AiCaseInsight["appealPotential"], string> = {
+    낮음: "현재 자료만으로는 행정심판 쟁점이 뚜렷하게 확인되지는 않습니다.",
+    보통: "향후 조치결정 내용에 따라 행정심판 가능성을 검토할 필요가 있습니다.",
+    높음: "불복 또는 행정심판 가능성이 있으므로 처분 사유와 절차상 쟁점을 함께 검토해야 합니다.",
+  };
+  const priorityActionText =
+    insight.priorityActions.length > 0 ? insight.priorityActions.slice(0, 2).join(", ") : "담당 행정사의 최종 검토";
+  const missingOpinion =
+    insight.missingItems.length > 0
+      ? `우선 보완할 자료는 ${insight.missingItems.slice(0, 3).join(", ")}이며, 다음 우선업무는 ${priorityActionText}입니다.`
+      : `현재 필수자료는 비교적 충실하게 입력된 상태이며, 다음 우선업무는 ${priorityActionText}입니다.`;
+
+  return [
+    `현재 사건점수는 ${insight.caseHealthScore}점, 사건완성도는 ${insight.caseCompleteness}%, AI 신뢰도는 ${insight.aiConfidence}%입니다.`,
+    scoreOpinion,
+    evidenceOpinion,
+    riskOpinionByLevel[insight.actionRiskLevel],
+    appealOpinionByLevel[insight.appealPotential],
+    missingOpinion,
+  ].join("\n");
 }
 
 function getUniqueKeywordMatchCount(text: string, keywords: string[]) {
