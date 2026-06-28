@@ -167,6 +167,14 @@ type ReservationEvent = {
   updated_at: string;
 };
 
+type WorkflowSuggestion = {
+  counselor: string;
+  event_type: string;
+  message: string;
+  reservation_id: string;
+  title: string;
+};
+
 type DashboardData = {
   events: ReservationEvent[];
   consultLogs: ReservationConsultLog[];
@@ -345,6 +353,8 @@ export default function AdminPage() {
   const [savingEventId, setSavingEventId] = useState<string | null>(null);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+  const [workflowSuggestions, setWorkflowSuggestions] = useState<Record<string, WorkflowSuggestion | null>>({});
+  const [creatingWorkflowEventKey, setCreatingWorkflowEventKey] = useState<string | null>(null);
   const [evidenceFilesByReservation, setEvidenceFilesByReservation] = useState<Record<string, ReservationFile[]>>({});
   const [selectedEvidenceFiles, setSelectedEvidenceFiles] = useState<Record<string, File | null>>({});
   const [evidenceUploadOpen, setEvidenceUploadOpen] = useState<Record<string, boolean>>({});
@@ -486,6 +496,142 @@ export default function AdminPage() {
       ...current,
       [getReservationKey(reservation)]: isOpen,
     }));
+  }
+
+  function setWorkflowSuggestion(reservation: Reservation, nextEventType?: string | null) {
+    const reservationId = reservation.id;
+    if (!reservationId || !nextEventType) {
+      return;
+    }
+
+    setWorkflowSuggestions((current) => ({
+      ...current,
+      [reservationId]: {
+        counselor: reservation.manager || "",
+        event_type: nextEventType,
+        message: `다음 단계로 ${nextEventType} 일정을 생성하시겠습니까?`,
+        reservation_id: reservationId,
+        title: `${reservation.name || "예약자"} ${nextEventType}`,
+      },
+    }));
+    setOpenDetailSections((current) => ({ ...current, events: true }));
+  }
+
+  async function promoteCaseStatusIfHigher(
+    reservation: Reservation,
+    targetStatus: string,
+    successMessage: string,
+  ): Promise<"changed" | "skipped" | "failed"> {
+    const reservationId = reservation.id;
+    const currentStatus = getCurrentReservationById(reservationId)?.case_status ?? reservation.case_status;
+
+    if (getCaseStatusRank(targetStatus) <= getCaseStatusRank(currentStatus)) {
+      return "skipped";
+    }
+
+    if (!reservationId || dataSource !== "supabase" || !isUuid(reservationId)) {
+      setReservations((current) =>
+        current.map((item) => (getReservationKey(item) === getReservationKey(reservation) ? { ...item, case_status: targetStatus } : item)),
+      );
+      setMessage(successMessage);
+      return "changed";
+    }
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { error } = await supabase
+        .from("reservations")
+        .update({ case_status: targetStatus })
+        .eq("id", reservationId);
+
+      if (error) {
+        throw error;
+      }
+
+      setReservations((current) =>
+        current.map((item) => (item.id === reservationId ? { ...item, case_status: targetStatus } : item)),
+      );
+      setMessage(successMessage);
+      return "changed";
+    } catch (error) {
+      console.error("Failed to auto promote case status:", error);
+      setMessage("사건상태 자동 변경에 실패했습니다. 필요 시 수동으로 변경해주세요.");
+      return "failed";
+    }
+  }
+
+  function getCurrentReservationById(reservationId?: string | null) {
+    return reservationId ? reservations.find((reservation) => reservation.id === reservationId) : undefined;
+  }
+
+  async function createSuggestedWorkflowEvent(suggestion: WorkflowSuggestion) {
+    const reservation = getCurrentReservationById(suggestion.reservation_id);
+    if (!reservation?.id || dataSource !== "supabase" || !isUuid(reservation.id)) {
+      setMessage("다음 일정을 생성할 수 없습니다. 예약 정보를 다시 확인해주세요.");
+      return;
+    }
+
+    const existingEvents = eventsByReservation[reservation.id] ?? [];
+    if (existingEvents.some((event) => !event.completed && event.event_type === suggestion.event_type)) {
+      setMessage("이미 동일한 미완료 일정이 있습니다.");
+      return;
+    }
+
+    const createKey = `${reservation.id}-${suggestion.event_type}`;
+    setCreatingWorkflowEventKey(createKey);
+
+    try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        throw new Error("Missing Supabase browser environment variables.");
+      }
+
+      const { data: duplicateEvents, error: duplicateError } = await supabase
+        .from("reservation_events")
+        .select("id")
+        .eq("reservation_id", reservation.id)
+        .eq("event_type", suggestion.event_type)
+        .eq("completed", false)
+        .limit(1);
+
+      if (duplicateError) {
+        throw duplicateError;
+      }
+
+      if ((duplicateEvents ?? []).length > 0) {
+        setMessage("이미 동일한 미완료 일정이 있습니다.");
+        return;
+      }
+
+      const { error } = await supabase.from("reservation_events").insert({
+        reservation_id: reservation.id,
+        event_type: suggestion.event_type,
+        title: suggestion.title,
+        event_date: getTodayDateCode(),
+        event_time: null,
+        counselor: suggestion.counselor || reservation.manager || null,
+        memo: "자동 제안으로 생성된 일정입니다.",
+        completed: false,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      await loadReservationEvents(reservation.id);
+      await loadDashboardData();
+      setWorkflowSuggestions((current) => ({ ...current, [reservation.id as string]: null }));
+      setMessage(`${suggestion.event_type} 일정이 생성되었습니다.`);
+    } catch (error) {
+      console.error("Failed to create suggested workflow event:", error);
+      setMessage("다음 일정 생성에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setCreatingWorkflowEventKey(null);
+    }
   }
 
   async function loadReservations() {
@@ -805,7 +951,21 @@ export default function AdminPage() {
         [reservationId]: (refreshedLogs ?? []) as ReservationConsultLog[],
       }));
       setConsultLogFormVisibility(reservation, false);
-      setMessage("상담기록이 저장되었습니다.");
+      await loadDashboardData();
+      const consultationTargetStatus = getConsultationWorkflowTargetStatus(consultationType);
+      if (consultationTargetStatus) {
+        const promotionResult = await promoteCaseStatusIfHigher(
+          reservation,
+          consultationTargetStatus,
+          "상담기록 저장으로 사건상태가 1차상담으로 변경되었습니다.",
+        );
+        setWorkflowSuggestion(reservation, "자료요청");
+        if (promotionResult === "skipped") {
+          setMessage("상담기록이 저장되었습니다. 다음 단계로 자료요청 일정을 생성할 수 있습니다.");
+        }
+      } else {
+        setMessage("상담기록이 저장되었습니다.");
+      }
     } catch (error) {
       console.error("Failed to create consult log:", error);
       setMessage("상담기록 저장에 실패했습니다. 예약 정보를 다시 확인해주세요.");
@@ -847,6 +1007,7 @@ export default function AdminPage() {
 
       cancelEditConsultLog(log.id);
       await loadConsultLogs(log.reservation_id);
+      await loadDashboardData();
       setMessage("상담기록이 수정되었습니다.");
     } catch (error) {
       console.error("Failed to update consult log:", error);
@@ -880,6 +1041,7 @@ export default function AdminPage() {
         ...current,
         [log.reservation_id]: (current[log.reservation_id] ?? []).filter((item) => item.id !== log.id),
       }));
+      await loadDashboardData();
       setMessage("상담기록이 삭제되었습니다.");
     } catch (error) {
       console.error("Failed to delete consult log:", error);
@@ -1037,6 +1199,7 @@ export default function AdminPage() {
       }));
       setEventFormVisibility(reservation, false);
       await loadReservationEvents(reservationId);
+      await loadDashboardData();
       setMessage("사건 일정이 저장되었습니다.");
     } catch (error) {
       console.error("Failed to create reservation event:", error);
@@ -1084,6 +1247,7 @@ export default function AdminPage() {
 
       cancelEditEvent(event.id);
       await loadReservationEvents(event.reservation_id);
+      await loadDashboardData();
       setMessage("사건 일정이 수정되었습니다.");
     } catch (error) {
       console.error("Failed to update reservation event:", error);
@@ -1117,7 +1281,33 @@ export default function AdminPage() {
       }
 
       await loadReservationEvents(event.reservation_id);
-      setMessage(event.completed ? "사건 일정 완료가 취소되었습니다." : "사건 일정이 완료 처리되었습니다.");
+      await loadDashboardData();
+
+      if (event.completed) {
+        setMessage("사건 일정 완료가 취소되었습니다.");
+        return;
+      }
+
+      const reservation = getCurrentReservationById(event.reservation_id);
+      const targetStatus = getEventWorkflowTargetStatus(event.event_type);
+      const nextEventType = getNextWorkflowEventType(event.event_type);
+
+      if (reservation && targetStatus) {
+        const promotionResult = await promoteCaseStatusIfHigher(
+          reservation,
+          targetStatus,
+          `${event.event_type} 완료로 사건상태가 ${targetStatus}로 변경되었습니다.`,
+        );
+        if (promotionResult === "skipped") {
+          setMessage("사건 일정이 완료 처리되었습니다.");
+        }
+      } else {
+        setMessage("사건 일정이 완료 처리되었습니다.");
+      }
+
+      if (reservation && nextEventType) {
+        setWorkflowSuggestion(reservation, nextEventType);
+      }
     } catch (error) {
       console.error("Failed to toggle reservation event:", error);
       setMessage("사건 일정 완료 처리에 실패했습니다. 잠시 후 다시 시도해주세요.");
@@ -1151,6 +1341,7 @@ export default function AdminPage() {
         ...current,
         [event.reservation_id]: (current[event.reservation_id] ?? []).filter((item) => item.id !== event.id),
       }));
+      await loadDashboardData();
       setMessage("사건 일정이 삭제되었습니다.");
     } catch (error) {
       console.error("Failed to delete reservation event:", error);
@@ -1708,6 +1899,13 @@ export default function AdminPage() {
                 editingEventForms={editingEventForms}
                 editingEventId={editingEventId}
                 events={selectedEvents}
+                workflowSuggestion={selectedReservation.id ? workflowSuggestions[selectedReservation.id] ?? null : null}
+                isCreatingWorkflowEvent={
+                  selectedReservation.id
+                    ? creatingWorkflowEventKey ===
+                      `${selectedReservation.id}-${workflowSuggestions[selectedReservation.id]?.event_type ?? ""}`
+                    : false
+                }
                 isNewFormOpen={eventFormOpen[selectedReservationKey] ?? false}
                 isLoading={loadingEventsId === selectedReservation.id}
                 isSupabaseReservation={dataSource === "supabase" && isUuid(selectedReservation.id)}
@@ -1726,6 +1924,7 @@ export default function AdminPage() {
                   setEventFormVisibility(selectedReservation, !(eventFormOpen[selectedReservationKey] ?? false))
                 }
                 onToggleComplete={toggleReservationEventCompleted}
+                onCreateWorkflowEvent={createSuggestedWorkflowEvent}
                 onUpdate={updateReservationEvent}
                 reservationName={selectedReservation.name || "이름 없음"}
                 savingEventId={savingEventId}
@@ -2340,6 +2539,8 @@ function ReservationEventsSection({
   editingEventForms,
   editingEventId,
   events,
+  workflowSuggestion,
+  isCreatingWorkflowEvent,
   isNewFormOpen,
   isLoading,
   isSupabaseReservation,
@@ -2350,6 +2551,7 @@ function ReservationEventsSection({
   onChangeNew,
   onCreate,
   onDelete,
+  onCreateWorkflowEvent,
   onStartEdit,
   onToggleNewForm,
   onToggleComplete,
@@ -2362,6 +2564,8 @@ function ReservationEventsSection({
   editingEventForms: Record<string, ReservationEventForm>;
   editingEventId: string | null;
   events: ReservationEvent[];
+  workflowSuggestion: WorkflowSuggestion | null;
+  isCreatingWorkflowEvent: boolean;
   isNewFormOpen: boolean;
   isLoading: boolean;
   isSupabaseReservation: boolean;
@@ -2372,6 +2576,7 @@ function ReservationEventsSection({
   onChangeNew: (field: keyof ReservationEventForm, value: string | boolean) => void;
   onCreate: () => void;
   onDelete: (event: ReservationEvent) => void;
+  onCreateWorkflowEvent: (suggestion: WorkflowSuggestion) => void;
   onStartEdit: (event: ReservationEvent) => void;
   onToggleNewForm: () => void;
   onToggleComplete: (event: ReservationEvent) => void;
@@ -2420,6 +2625,20 @@ function ReservationEventsSection({
           </ul>
         )}
       </div>
+
+      {workflowSuggestion ? (
+        <div className="mt-4 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-bold text-blue-950">{workflowSuggestion.message}</p>
+          <button
+            className="btn-primary whitespace-nowrap px-3 py-2 text-sm"
+            disabled={isCreatingWorkflowEvent}
+            onClick={() => onCreateWorkflowEvent(workflowSuggestion)}
+            type="button"
+          >
+            {isCreatingWorkflowEvent ? "생성 중..." : `${workflowSuggestion.event_type} 일정 생성`}
+          </button>
+        </div>
+      ) : null}
 
       <div className="mt-4">
         <button className="btn-outline px-3 py-2 text-sm" onClick={onToggleNewForm} type="button">
@@ -3148,6 +3367,47 @@ function isUuid(value?: string | null) {
 
 function normalizeSearchText(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function getCaseStatusRank(caseStatus?: string) {
+  const step = getTimelineCurrentStep(caseStatus);
+  const index = caseTimelineSteps.indexOf(step);
+  return index >= 0 ? index + 1 : 1;
+}
+
+function getConsultationWorkflowTargetStatus(consultationType: string) {
+  return ["전화", "방문", "화상"].includes(consultationType) ? "1차상담" : null;
+}
+
+function getEventWorkflowTargetStatus(eventType: string) {
+  const statusByEventType: Record<string, string> = {
+    자료요청: "자료요청",
+    자료제출: "자료검토",
+    "의견서 작성": "심의준비",
+    "의견서 제출": "심의준비",
+    "학폭위 개최": "심의완료",
+    조치결정: "심의완료",
+    "행정심판 검토": "행정심판검토",
+    "행정심판 청구": "행정심판검토",
+    종결: "종결",
+  };
+
+  return statusByEventType[eventType] ?? null;
+}
+
+function getNextWorkflowEventType(eventType: string) {
+  const nextEventTypeByEventType: Record<string, string> = {
+    자료요청: "자료제출",
+    자료제출: "의견서 작성",
+    "의견서 작성": "학폭위 개최",
+    "의견서 제출": "학폭위 개최",
+    "학폭위 개최": "행정심판 검토",
+    조치결정: "행정심판 검토",
+    "행정심판 검토": "종결",
+    "행정심판 청구": "종결",
+  };
+
+  return nextEventTypeByEventType[eventType] ?? null;
 }
 
 function getTimelineCurrentStep(caseStatus?: string) {
