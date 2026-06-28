@@ -512,7 +512,7 @@ export default function AdminPage() {
       setDataSource("supabase");
       setReservations(nextReservations);
       setSelectedId(nextReservations[0] ? getReservationKey(nextReservations[0]) : null);
-      setMessage("Supabase reservations 테이블에서 데이터를 불러왔습니다.");
+      setMessage("예약 데이터를 불러왔습니다.");
       void loadDashboardData();
     } catch (error) {
       console.error("Failed to load reservations from Supabase:", error);
@@ -521,7 +521,7 @@ export default function AdminPage() {
       setReservations(localReservations);
       setSelectedId(localReservations[0] ? getReservationKey(localReservations[0]) : null);
       setDashboardData({ events: [], consultLogs: [], fileCount: null });
-      setMessage("Supabase 조회에 실패해 localStorage fallback 데이터를 표시합니다.");
+      setMessage("예약 데이터를 불러오지 못해 임시 저장 데이터를 표시합니다.");
     } finally {
       setIsLoading(false);
     }
@@ -718,12 +718,12 @@ export default function AdminPage() {
     const reservationId = reservation.id;
 
     if (!reservationId || dataSource !== "supabase") {
-      setMessage("Supabase에 저장된 예약만 상담기록을 저장할 수 있습니다.");
+      setMessage("예약 정보를 다시 불러온 뒤 상담기록을 저장해주세요.");
       return;
     }
 
     if (!isUuid(reservationId)) {
-      setMessage("상담기록 저장 실패: 예약 ID가 올바른 UUID 형식이 아닙니다.");
+      setMessage("상담기록 저장에 실패했습니다. 예약 정보를 다시 확인해주세요.");
       return;
     }
 
@@ -808,7 +808,7 @@ export default function AdminPage() {
       setMessage("상담기록이 저장되었습니다.");
     } catch (error) {
       console.error("Failed to create consult log:", error);
-      setMessage(`상담기록 저장 실패: ${getSupabaseErrorMessage(error)}`);
+      setMessage("상담기록 저장에 실패했습니다. 예약 정보를 다시 확인해주세요.");
     } finally {
       setSavingConsultLogId(null);
     }
@@ -994,7 +994,7 @@ export default function AdminPage() {
     const reservationId = reservation.id;
 
     if (!reservationId || dataSource !== "supabase" || !isUuid(reservationId)) {
-      setMessage("Supabase에 저장된 예약만 사건 일정을 저장할 수 있습니다.");
+      setMessage("예약 정보를 다시 불러온 뒤 사건 일정을 저장해주세요.");
       return;
     }
 
@@ -1040,7 +1040,7 @@ export default function AdminPage() {
       setMessage("사건 일정이 저장되었습니다.");
     } catch (error) {
       console.error("Failed to create reservation event:", error);
-      setMessage(`사건 일정 저장 실패: ${getSupabaseErrorMessage(error)}`);
+      setMessage("사건 일정 저장에 실패했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setSavingEventId(null);
     }
@@ -1087,7 +1087,7 @@ export default function AdminPage() {
       setMessage("사건 일정이 수정되었습니다.");
     } catch (error) {
       console.error("Failed to update reservation event:", error);
-      setMessage(`사건 일정 수정 실패: ${getSupabaseErrorMessage(error)}`);
+      setMessage("사건 일정 수정에 실패했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setSavingEventId(null);
     }
@@ -1120,7 +1120,7 @@ export default function AdminPage() {
       setMessage(event.completed ? "사건 일정 완료가 취소되었습니다." : "사건 일정이 완료 처리되었습니다.");
     } catch (error) {
       console.error("Failed to toggle reservation event:", error);
-      setMessage(`사건 일정 완료 처리 실패: ${getSupabaseErrorMessage(error)}`);
+      setMessage("사건 일정 완료 처리에 실패했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setSavingEventId(null);
     }
@@ -1154,7 +1154,7 @@ export default function AdminPage() {
       setMessage("사건 일정이 삭제되었습니다.");
     } catch (error) {
       console.error("Failed to delete reservation event:", error);
-      setMessage(`사건 일정 삭제 실패: ${getSupabaseErrorMessage(error)}`);
+      setMessage("사건 일정 삭제에 실패했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setDeletingEventId(null);
     }
@@ -1196,7 +1196,7 @@ export default function AdminPage() {
     const file = selectedEvidenceFiles[key];
 
     if (!reservation.id || dataSource !== "supabase") {
-      setMessage("Supabase에 저장된 예약만 증거자료를 업로드할 수 있습니다.");
+      setMessage("예약 정보를 다시 불러온 뒤 증거자료를 업로드해주세요.");
       return;
     }
 
@@ -1222,7 +1222,7 @@ export default function AdminPage() {
     const supabase = getSupabaseClient();
     if (!supabase) {
       setUploadingEvidenceId(null);
-      setMessage("Supabase 환경 변수가 없어 증거자료를 업로드할 수 없습니다.");
+      setMessage("증거자료 업로드를 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
       return;
     }
 
@@ -1273,7 +1273,7 @@ export default function AdminPage() {
   async function downloadEvidenceFile(file: ReservationFile) {
     const supabase = getSupabaseClient();
     if (!supabase) {
-      setMessage("Supabase 환경 변수가 없어 증거자료를 다운로드할 수 없습니다.");
+      setMessage("증거자료 다운로드를 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
       return;
     }
 
@@ -1300,7 +1300,7 @@ export default function AdminPage() {
 
     const supabase = getSupabaseClient();
     if (!supabase) {
-      setMessage("Supabase 환경 변수가 없어 증거자료를 삭제할 수 없습니다.");
+      setMessage("증거자료 삭제를 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
       return;
     }
 
@@ -1364,7 +1364,7 @@ export default function AdminPage() {
           setReservations((current) =>
             current.map((item) => (getReservationKey(item) === key ? updatedReservation : item)),
           );
-          setMessage("사건관리 정보가 Supabase에 저장되었습니다.");
+          setMessage("사건관리 정보가 저장되었습니다.");
           setSavingId(null);
           return;
         }
@@ -1381,7 +1381,7 @@ export default function AdminPage() {
       return nextReservations;
     });
     setDataSource("local");
-    setMessage("Supabase 저장에 실패해 localStorage fallback에 저장했습니다.");
+    setMessage("사건관리 정보 저장에 실패해 임시 저장 데이터에 반영했습니다.");
     setSavingId(null);
   }
 
@@ -1420,7 +1420,7 @@ export default function AdminPage() {
         <div>
           <h1 className="text-3xl font-black">관리자 사건관리</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Supabase reservations 테이블을 기준으로 관리하고, 장애 시 localStorage fallback을 사용합니다.
+            예약 데이터를 기준으로 관리하고, 연결 장애 시 임시 저장 데이터를 표시합니다.
           </p>
         </div>
         <button className="btn-outline" disabled={isLoading} onClick={loadReservations} type="button">
@@ -1541,9 +1541,9 @@ export default function AdminPage() {
                   onClick={() => setSelectedId(key)}
                   type="button"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <strong className="text-base">{reservation.name || "이름 없음"}</strong>
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">
+                  <div className="flex items-start justify-between gap-3">
+                    <strong className="min-w-0 break-words text-base">{reservation.name || "이름 없음"}</strong>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">
                       {reservation.reservation_status || "접수"}
                     </span>
                   </div>
@@ -1551,10 +1551,14 @@ export default function AdminPage() {
                   <p className="mt-1 text-xs text-slate-500">{formatDate(reservation.created_at)}</p>
                   <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-600 sm:grid-cols-2">
                     {reservation.case_number ? (
-                      <span className="rounded-lg bg-navy/10 px-2 py-1 text-navy">{reservation.case_number}</span>
+                      <span className="break-words rounded-lg bg-navy/10 px-2 py-1 text-navy">{reservation.case_number}</span>
                     ) : null}
-                    <span className="rounded-lg bg-slate-100 px-2 py-1">사건상태: {reservation.case_status || "-"}</span>
-                    <span className="rounded-lg bg-slate-100 px-2 py-1">담당자: {reservation.manager || "-"}</span>
+                    <span className="break-words rounded-lg bg-slate-100 px-2 py-1">
+                      사건상태: {reservation.case_status || "-"}
+                    </span>
+                    <span className="break-words rounded-lg bg-slate-100 px-2 py-1">
+                      담당자: {reservation.manager || "-"}
+                    </span>
                   </div>
                 </button>
               );
@@ -1769,7 +1773,7 @@ export default function AdminPage() {
                   onClick={() => saveReservation(selectedReservation)}
                   type="button"
                 >
-                  {savingId === getReservationKey(selectedReservation) ? "저장 중" : "사건관리 저장"}
+                  {savingId === getReservationKey(selectedReservation) ? "저장 중..." : "사건관리 저장"}
                 </button>
               </div>
             </div>
@@ -2150,12 +2154,12 @@ function ConsultationLogSection({
             onClick={onCreate}
             type="button"
           >
-            {savingLogId === "new" ? "저장 중" : "상담기록 저장"}
+            {savingLogId === "new" ? "저장 중..." : "상담기록 저장"}
           </button>
         </div>
         {!isSupabaseReservation ? (
           <p className="mt-3 text-xs font-semibold text-slate-500">
-            Supabase에 저장된 예약에서만 새 상담기록을 저장할 수 있습니다.
+            예약 정보를 다시 불러온 뒤 새 상담기록을 저장할 수 있습니다.
           </p>
         ) : null}
       </div>
@@ -2188,7 +2192,7 @@ function ConsultationLogSection({
                     <p className="mt-1 text-sm font-semibold text-slate-500">{formatDate(log.created_at)}</p>
                   </div>
                   {!isEditing ? (
-                    <div className="flex shrink-0 gap-2">
+                    <div className="flex shrink-0 flex-wrap gap-2">
                       <button className="btn-outline px-3 py-1.5 text-xs" onClick={() => onStartEdit(log)} type="button">
                         수정
                       </button>
@@ -2198,7 +2202,7 @@ function ConsultationLogSection({
                         onClick={() => onDelete(log)}
                         type="button"
                       >
-                        {deletingLogId === log.id ? "삭제 중" : "삭제"}
+                        {deletingLogId === log.id ? "삭제 중..." : "삭제"}
                       </button>
                     </div>
                   ) : null}
@@ -2238,7 +2242,7 @@ function ConsultationLogSection({
                         />
                       </Field>
                     </div>
-                    <div className="flex justify-end gap-2 md:col-span-2">
+                    <div className="flex flex-wrap justify-end gap-2 md:col-span-2">
                       <button className="btn-outline" onClick={() => onCancelEdit(log.id)} type="button">
                         취소
                       </button>
@@ -2248,7 +2252,7 @@ function ConsultationLogSection({
                         onClick={() => onUpdate(log)}
                         type="button"
                       >
-                        {savingLogId === log.id ? "저장 중" : "저장"}
+                        {savingLogId === log.id ? "저장 중..." : "저장"}
                       </button>
                     </div>
                   </div>
@@ -2499,7 +2503,7 @@ function ReservationEventsSection({
             onClick={onCreate}
             type="button"
           >
-            {savingEventId === "new" ? "저장 중" : "일정 저장"}
+            {savingEventId === "new" ? "저장 중..." : "일정 저장"}
           </button>
         </div>
       </div>
@@ -2512,7 +2516,7 @@ function ReservationEventsSection({
         </p>
       ) : visibleEvents.length === 0 ? (
         <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
-          표시할 사건 일정이 없습니다.
+          등록된 사건 일정이 없습니다.
         </p>
       ) : (
         <div className="mt-4 space-y-5">
@@ -2582,7 +2586,7 @@ function ReservationEventGroup({
       <h3 className="text-sm font-black text-slate-800">{title}</h3>
       {events.length === 0 ? (
         <p className="mt-2 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
-          표시할 일정이 없습니다.
+          등록된 일정이 없습니다.
         </p>
       ) : (
         <div className="mt-2 space-y-3">
@@ -2604,9 +2608,9 @@ function ReservationEventGroup({
                 key={event.id}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-black text-slate-500">{event.event_type}</p>
-                    <h3 className="mt-1 text-base font-black">{event.title}</h3>
+                    <h3 className="mt-1 break-words text-base font-black">{event.title}</h3>
                     <p className="mt-1 text-sm font-semibold">{formatEventDateTime(event)}</p>
                   </div>
                   {!isEditing ? (
@@ -2628,7 +2632,7 @@ function ReservationEventGroup({
                         onClick={() => onDelete(event)}
                         type="button"
                       >
-                        {deletingEventId === event.id ? "삭제 중" : "삭제"}
+                        {deletingEventId === event.id ? "삭제 중..." : "삭제"}
                       </button>
                     </div>
                   ) : null}
@@ -2713,7 +2717,7 @@ function ReservationEventGroup({
                         onClick={() => onUpdate(event)}
                         type="button"
                       >
-                        {savingEventId === event.id ? "저장 중" : "저장"}
+                        {savingEventId === event.id ? "저장 중..." : "저장"}
                       </button>
                     </div>
                   </div>
@@ -2802,14 +2806,14 @@ function EvidenceFilesSection({
             onClick={onUpload}
             type="button"
           >
-            {isUploading ? "업로드 중" : "업로드"}
+            {isUploading ? "업로드 중..." : "업로드"}
           </button>
         </div>
       ) : null}
 
       {!isSupabaseReservation ? (
         <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
-          Supabase에 저장된 예약에서만 증거자료를 관리할 수 있습니다.
+          예약 정보를 다시 불러온 뒤 증거자료를 관리할 수 있습니다.
         </p>
       ) : isLoading ? (
         <p className="mt-4 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-500">
@@ -2849,7 +2853,7 @@ function EvidenceFilesSection({
                       onClick={() => onDelete(file)}
                       type="button"
                     >
-                      {deletingFileId === file.id ? "삭제 중" : "삭제"}
+                      {deletingFileId === file.id ? "삭제 중..." : "삭제"}
                     </button>
                   </td>
                 </tr>
@@ -2928,9 +2932,9 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
 
 function Info({ label, value }: { label: string; value?: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs font-bold text-slate-500">{label}</p>
-      <p className="mt-1 text-sm text-slate-800">{value || "-"}</p>
+      <p className="mt-1 break-words text-sm text-slate-800">{value || "-"}</p>
     </div>
   );
 }
@@ -2960,8 +2964,31 @@ function formatDate(value?: string) {
     return "-";
   }
 
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ko-KR");
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return `${formatDateOnly(date)} ${formatTimeOnly(date)}`;
+}
+
+function formatDateOnly(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatTimeOnly(date: Date) {
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+
+  return `${hour}:${minute}`;
 }
 
 function formatConsultationLogDate(date: Date) {
@@ -3063,7 +3090,10 @@ function truncateText(value: string, maxLength: number) {
 }
 
 function formatEventDateTime(event: Pick<ReservationEvent, "event_date" | "event_time">) {
-  return [event.event_date, event.event_time].filter(Boolean).join(" ");
+  const eventDate = event.event_date || "-";
+  const eventTime = event.event_time?.trim();
+
+  return eventTime ? `${eventDate} ${eventTime.slice(0, 5)}` : eventDate;
 }
 
 function getEventComparableTime(event: ReservationEvent) {
@@ -3108,18 +3138,6 @@ function sanitizeFileName(fileName: string) {
 
 function getEvidenceStoragePath(filePath: string) {
   return filePath.startsWith(`${EVIDENCE_BUCKET}/`) ? filePath.slice(EVIDENCE_BUCKET.length + 1) : filePath;
-}
-
-function getSupabaseErrorMessage(error: unknown) {
-  if (typeof error === "object" && error && "message" in error) {
-    return String((error as { message?: unknown }).message || "알 수 없는 오류");
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return String(error || "알 수 없는 오류");
 }
 
 function isUuid(value?: string | null) {

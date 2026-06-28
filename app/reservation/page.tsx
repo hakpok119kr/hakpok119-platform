@@ -310,9 +310,7 @@ export default function ReservationPage() {
     setMessage(
       saveResult.ok
         ? "상담예약이 정상적으로 접수되었습니다. 담당자가 확인 후 연락드리겠습니다."
-        : `Supabase 연결에 실패해 예약을 브라우저 임시 저장소에 보관했습니다. 오류: ${
-            saveResult.errorMessage ?? "알 수 없는 오류"
-          }`,
+        : "예약을 임시 저장했습니다. 연결 상태를 확인한 뒤 담당자가 다시 확인하겠습니다.",
     );
   };
 
