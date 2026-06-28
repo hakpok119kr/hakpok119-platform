@@ -365,6 +365,7 @@ export default function AdminPage() {
   const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
   const [deletingEvidenceFileId, setDeletingEvidenceFileId] = useState<string | null>(null);
   const [evidenceInputVersion, setEvidenceInputVersion] = useState(0);
+  const [aiCaseSummaries, setAiCaseSummaries] = useState<Record<string, string>>({});
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     events: [],
     consultLogs: [],
@@ -777,6 +778,27 @@ export default function AdminPage() {
     const notice = "Ver.2.0에서 제공 예정인 기능입니다.";
     setMessage(notice);
     window.alert(notice);
+  }
+
+  function handleGenerateAiCaseSummary(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI 사건요약을 생성할 사건을 찾을 수 없습니다.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const aiSummary = buildAiCaseSummary(reservation, logs, events, files);
+
+    setAiCaseSummaries((current) => ({
+      ...current,
+      [caseId]: aiSummary,
+    }));
+    setMessage("AI 사건요약 초안이 생성되었습니다.");
   }
 
   function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
@@ -1780,7 +1802,11 @@ export default function AdminPage() {
           {selectedReservation ? (
             <div>
               <CaseSummaryPanel events={selectedEvents} reservation={selectedReservation} />
-              <AiAssistantSection onFeatureClick={handleAiFeatureClick} />
+              <AiAssistantSection
+                aiSummary={aiCaseSummaries[selectedReservationKey]}
+                onFeatureClick={handleAiFeatureClick}
+                onGenerateSummary={() => handleGenerateAiCaseSummary(selectedReservationKey)}
+              />
               <AccordionSection
                 isOpen={openDetailSections.reservationInfo}
                 onToggle={() => toggleDetailSection("reservationInfo")}
@@ -2278,15 +2304,19 @@ function CaseSummaryPanel({ events, reservation }: { events: ReservationEvent[];
 }
 
 function AiAssistantSection({
+  aiSummary,
   onFeatureClick,
+  onGenerateSummary,
 }: {
+  aiSummary?: string;
   onFeatureClick: (feature: "summary" | "evidence" | "draft") => void;
+  onGenerateSummary: () => void;
 }) {
   const features = [
     {
       description: "상담기록, 일정, 무료진단 결과를 바탕으로 사건 개요를 정리합니다.",
       id: "summary" as const,
-      title: "AI 사건요약",
+      title: "AI 사건요약 생성",
     },
     {
       description: "업로드된 증거자료와 제출서류를 바탕으로 부족자료를 점검합니다.",
@@ -2311,7 +2341,7 @@ function AiAssistantSection({
           <button
             className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-navy hover:bg-white hover:ring-2 hover:ring-navy/10"
             key={feature.id}
-            onClick={() => onFeatureClick(feature.id)}
+            onClick={() => (feature.id === "summary" ? onGenerateSummary() : onFeatureClick(feature.id))}
             type="button"
           >
             <span className="block text-sm font-black text-slate-900">{feature.title}</span>
@@ -2321,6 +2351,14 @@ function AiAssistantSection({
           </button>
         ))}
       </div>
+      {aiSummary ? (
+        <div className="mt-4 rounded-xl border border-navy/15 bg-navy/5 p-4">
+          <p className="text-sm font-black text-slate-900">AI 사건요약 결과</p>
+          <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-7 text-slate-700">
+            {aiSummary}
+          </pre>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -3561,6 +3599,142 @@ function getCaseChecklistItems(
     },
     { completed: reservation.case_status === "종결" || hasCompletedEvent("종결"), label: "종결" },
   ];
+}
+
+function buildAiCaseSummary(
+  caseItem: Reservation,
+  logs: ReservationConsultLog[] = [],
+  events: ReservationEvent[] = [],
+  evidenceFiles: ReservationFile[] = [],
+) {
+  const consultationTexts = [
+    caseItem.summary,
+    caseItem.consultation_log,
+    caseItem.content,
+    caseItem.diagnosis_summary,
+    ...logs.map((log) => log.content),
+  ].filter(hasText);
+  const adminMemo = caseItem.admin_memo?.trim() ?? "";
+  const timelineStep = getCaseProgressInfo(caseItem.case_status).step;
+  const sortedEvents = sortReservationEvents(events);
+  const checklistItems = getCaseChecklistItems(caseItem, logs, events);
+  const completedChecklistItems = checklistItems.filter((item) => item.completed).map((item) => item.label);
+  const pendingChecklistItems = checklistItems.filter((item) => !item.completed).map((item) => item.label);
+  const importantEvents = sortedEvents
+    .filter((event) => isImportantReservationEvent(event) || !event.completed)
+    .slice(0, 3)
+    .map((event) => `${formatEventDateTime(event)} ${event.event_type}${event.completed ? " 완료" : " 예정"}`);
+
+  const hasConsultation = consultationTexts.length > 0;
+  const hasEvidence = evidenceFiles.length > 0;
+  const hasEvents = events.length > 0;
+  const hasAdminMemo = hasText(adminMemo);
+  const issueKeywords = getAiIssueKeywords([...consultationTexts, adminMemo].join(" "));
+
+  const overview = hasConsultation
+    ? [
+        `- 현재 사건은 ${caseItem.student_type || "학생구분 미확인"} 건으로 접수되어 ${timelineStep} 단계에서 관리 중입니다.`,
+        `- 상담자료는 ${consultationTexts.length}건, 상담기록은 ${logs.length}건 확인되며 입력 내용 기준으로 사건 흐름을 검토할 수 있습니다.`,
+        importantEvents.length > 0
+          ? `- 주요 일정은 ${importantEvents.join(", ")}로 확인됩니다.`
+          : "- 사건 타임라인상 세부 일정은 아직 충분히 등록되지 않았습니다.",
+        completedChecklistItems.length > 0
+          ? `- 체크리스트상 완료 항목은 ${completedChecklistItems.slice(0, 4).join(", ")}입니다.`
+          : "- 체크리스트상 완료된 후속 절차는 아직 제한적입니다.",
+      ]
+    : ["- 현재 입력된 사건자료가 부족하여 추가 확인이 필요합니다."];
+
+  const partyPosition = hasConsultation
+    ? [
+        `- 상담유형은 ${caseItem.consultation_type || caseItem.consultationType || "미확인"}이며, 학생구분은 ${
+          caseItem.student_type || caseItem.studentRole || "미확인"
+        }입니다.`,
+        `- ${getGeneralizedPartyLabel(caseItem.student_type)} 측 진술을 중심으로 기초 사실관계가 접수된 상태입니다.`,
+        "- 상대학생 측 입장, 보호자 의견, 학교 측 확인 내용은 별도 자료로 추가 확인이 필요합니다.",
+      ]
+    : ["- 당사자 입장은 추가 확인이 필요합니다."];
+
+  const coreIssues = [
+    ...issueKeywords.map((keyword) => `- ${keyword}`),
+    "- 학교폭력 해당성 여부",
+    "- 피해 주장 내용의 입증 가능성",
+    "- 고의성·지속성 여부",
+    "- 반성 및 화해 여부",
+    "- 조치수위 및 생활기록부 영향",
+  ];
+
+  const missingInfo = [
+    !hasConsultation ? "- 상담기록 추가 필요" : "",
+    !hasEvidence ? "- 증거자료 등록 필요" : "",
+    !hasEvents ? "- 학폭위 또는 제출기한 일정 확인 필요" : "",
+    !hasAdminMemo ? "- 담당자 검토 메모 추가 필요" : "",
+  ].filter(Boolean);
+
+  const nextActions = [
+    !hasConsultation ? "- 상담기록 보완" : "",
+    !hasEvidence ? "- 증거자료 추가 등록" : "",
+    !hasEvents || !events.some((event) => event.event_type === "학폭위 개최") ? "- 학폭위 일정 확인" : "",
+    !events.some((event) => event.event_type === "의견서 제출") ? "- 의견서 제출기한 확인" : "",
+    !hasAdminMemo ? "- 관리자 메모로 검토사항 정리" : "",
+    pendingChecklistItems.length > 0 ? `- 미완료 체크리스트 확인: ${pendingChecklistItems.slice(0, 3).join(", ")}` : "",
+  ].filter(Boolean);
+
+  return [
+    "AI 사건요약 결과",
+    "",
+    "1. 사건 개요",
+    ...overview,
+    "",
+    "2. 당사자 입장",
+    ...partyPosition,
+    "",
+    "3. 핵심 쟁점",
+    ...Array.from(new Set(coreIssues)),
+    "",
+    "4. 부족 정보",
+    ...(missingInfo.length > 0 ? missingInfo : ["- 현재 필수 기초자료는 일부 확인되나, 최신 사실관계와 제출기한은 계속 점검이 필요합니다."]),
+    "",
+    "5. 다음 조치",
+    ...(nextActions.length > 0 ? nextActions : ["- 입력자료를 기준으로 담당 행정사가 최종 검토 후 후속 조치를 확정합니다."]),
+    "",
+    "6. 주의사항",
+    "- 본 AI 사건요약은 입력된 사건자료를 바탕으로 자동 생성된 참고용 초안입니다. 최종 판단 및 제출 여부는 담당 행정사의 검토 후 결정해야 합니다.",
+  ].join("\n");
+}
+
+function hasText(value?: string | null) {
+  return Boolean(value?.trim());
+}
+
+function getGeneralizedPartyLabel(studentType?: string) {
+  const normalizedType = studentType?.trim() ?? "";
+
+  if (normalizedType.includes("피해")) {
+    return "피해학생";
+  }
+
+  if (normalizedType.includes("가해")) {
+    return "상대학생";
+  }
+
+  if (normalizedType.includes("학부모") || normalizedType.includes("보호자")) {
+    return "보호자";
+  }
+
+  return "당사자";
+}
+
+function getAiIssueKeywords(text: string) {
+  const issueRules = [
+    { keyword: "폭행·상해 관련 사실관계", pattern: /폭행|상해|신체|때렸|맞았|밀쳤/ },
+    { keyword: "언어폭력·모욕 관련 사실관계", pattern: /욕설|모욕|명예|비방|협박|언어/ },
+    { keyword: "사이버폭력 또는 온라인 증거 확인", pattern: /카톡|카카오|메신저|SNS|온라인|문자|채팅|캡처|캡쳐/ },
+    { keyword: "따돌림·지속성 여부", pattern: /따돌림|왕따|괴롭힘|지속|반복/ },
+    { keyword: "증거자료의 신빙성 및 제출 가능성", pattern: /증거|녹음|영상|사진|진단서|자료/ },
+    { keyword: "학교 조사 및 학폭위 절차 대응", pattern: /학폭위|학교|조사|위원회|심의|의견서/ },
+  ];
+
+  return issueRules.filter((rule) => rule.pattern.test(text)).map((rule) => rule.keyword);
 }
 
 function getConsultationWorkflowTargetStatus(consultationType: string) {
