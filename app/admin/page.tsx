@@ -1725,7 +1725,6 @@ export default function AdminPage() {
           <button className="btn-outline whitespace-nowrap" onClick={resetFilters} type="button">
             필터 초기화
           </button>
-          </div>
         </div>
         <p className="mt-3 text-sm font-semibold text-slate-600">
           전체 {reservations.length}건 중 {filteredReservations.length}건 표시
