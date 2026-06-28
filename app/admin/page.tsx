@@ -1307,19 +1307,19 @@ function ConsultationLogSection({
             };
 
             return (
-              <article className="rounded-xl border border-slate-200 bg-white p-4" key={log.id}>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h3 className="text-sm font-black text-slate-800">상담 #{logs.length - index}</h3>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">{formatDate(log.created_at)}</p>
+              <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" key={log.id}>
+                <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-black text-slate-900">상담 #{logs.length - index}</h3>
+                    <p className="mt-1 text-sm font-semibold text-slate-500">{formatDate(log.created_at)}</p>
                   </div>
                   {!isEditing ? (
-                    <div className="flex gap-2">
-                      <button className="btn-outline px-3 py-2 text-xs" onClick={() => onStartEdit(log)} type="button">
+                    <div className="flex shrink-0 gap-2">
+                      <button className="btn-outline px-3 py-1.5 text-xs" onClick={() => onStartEdit(log)} type="button">
                         수정
                       </button>
                       <button
-                        className="btn-outline px-3 py-2 text-xs"
+                        className="btn-outline px-3 py-1.5 text-xs"
                         disabled={deletingLogId === log.id}
                         onClick={() => onDelete(log)}
                         type="button"
@@ -1380,17 +1380,19 @@ function ConsultationLogSection({
                   </div>
                 ) : (
                   <>
-                    <dl className="mt-3 grid gap-2 text-sm md:grid-cols-2">
-                      <div>
-                        <dt className="text-xs font-bold text-slate-500">유형</dt>
-                        <dd className="mt-1 font-semibold text-slate-800">{log.consultation_type || "전화"}</dd>
+                    <dl className="mt-4 grid gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2">
+                      <div className="flex min-w-0 gap-2">
+                        <dt className="shrink-0 font-black text-slate-500">유형:</dt>
+                        <dd className="min-w-0 break-words font-semibold text-slate-800">
+                          {log.consultation_type || "전화"}
+                        </dd>
                       </div>
-                      <div>
-                        <dt className="text-xs font-bold text-slate-500">담당</dt>
-                        <dd className="mt-1 font-semibold text-slate-800">{log.counselor || "-"}</dd>
+                      <div className="flex min-w-0 gap-2">
+                        <dt className="shrink-0 font-black text-slate-500">담당:</dt>
+                        <dd className="min-w-0 break-words font-semibold text-slate-800">{log.counselor || "-"}</dd>
                       </div>
                     </dl>
-                    <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-700">
+                    <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">
                       {log.content}
                     </p>
                   </>
