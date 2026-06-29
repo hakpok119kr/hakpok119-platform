@@ -1004,15 +1004,34 @@ export default function AdminPage() {
         },
         method: "POST",
       });
-      const data = (await response.json()) as { ok: boolean; result?: string; error?: string };
+      const responseText = await response.text();
+      let data: { ok?: boolean; result?: string; error?: string };
+
+      try {
+        data = JSON.parse(responseText) as { ok?: boolean; result?: string; error?: string };
+      } catch {
+        const errorMessage = `AI 응답을 JSON으로 해석할 수 없습니다. status: ${response.status}, body: ${responseText.slice(0, 300)}`;
+        setAiCaseSummaryApiErrors((current) => ({ ...current, [caseId]: errorMessage }));
+        setMessage(errorMessage);
+        setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
+        return;
+      }
+
+      if (!response.ok) {
+        const errorMessage =
+          data.error ??
+          `AI 응답 생성 중 오류가 발생했습니다. status: ${response.status}, body: ${responseText.slice(0, 300)}`;
+        setAiCaseSummaryApiErrors((current) => ({ ...current, [caseId]: errorMessage }));
+        setMessage(errorMessage);
+        setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
+        return;
+      }
 
       if (!data.ok || !data.result) {
         const errorMessage = data.error ?? "AI 응답 생성 중 오류가 발생했습니다.";
         setAiCaseSummaryApiErrors((current) => ({ ...current, [caseId]: errorMessage }));
         setMessage(errorMessage);
         setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
-        return;
-        setMessage(data.error ?? "AI 응답 생성 중 오류가 발생했습니다.");
         return;
       }
 
@@ -1027,8 +1046,6 @@ export default function AdminPage() {
       setAiCaseSummaryApiErrors((current) => ({ ...current, [caseId]: errorMessage }));
       setMessage(errorMessage);
       setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
-      return;
-      setMessage("AI 응답 생성 중 오류가 발생했습니다.");
     }
   }
 
@@ -2330,6 +2347,7 @@ export default function AdminPage() {
                 error={aiCaseSummaryApiErrors[selectedReservationKey]}
                 isLoading={aiCaseSummaryApiLoadingId === selectedReservationKey}
                 onGenerate={() => handleGenerateAiCaseSummaryWithApi(selectedReservationKey)}
+                value={aiCaseSummaries[selectedReservationKey]}
               />
               <AiAssistantSection
                 aiDocumentReadiness={aiDocumentReadiness[selectedReservationKey]}
@@ -2852,10 +2870,12 @@ function AiCaseSummaryApiPanel({
   error,
   isLoading,
   onGenerate,
+  value,
 }: {
   error?: string;
   isLoading: boolean;
   onGenerate: () => void;
+  value?: string;
 }) {
   return (
     <section className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
@@ -2882,6 +2902,14 @@ function AiCaseSummaryApiPanel({
         <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
           {error}
         </p>
+      ) : null}
+      {value ? (
+        <div className="mt-4 rounded-xl border border-blue-100 bg-white p-4 shadow-inner">
+          <p className="text-sm font-black text-slate-900">AI 사건요약 결과</p>
+          <pre className="mt-3 max-h-[520px] overflow-auto whitespace-pre-wrap break-words font-sans text-sm leading-7 text-slate-800">
+            {value}
+          </pre>
+        </div>
       ) : null}
     </section>
   );
