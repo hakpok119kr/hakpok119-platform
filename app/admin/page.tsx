@@ -260,7 +260,12 @@ type AiOpinionDraft = {
   analyzedAt: string;
 };
 
-type AiOutputType = "case_summary" | "case_opinion" | "case_analysis" | "evidence_analysis";
+type AiOutputType =
+  | "case_summary"
+  | "case_opinion"
+  | "case_analysis"
+  | "evidence_analysis"
+  | "assistant_case_summary";
 
 type AiOutputRecord = {
   id: string;
@@ -933,7 +938,7 @@ export default function AdminPage() {
     window.alert(notice);
   }
 
-  function handleGenerateAiCaseSummary(caseId: string) {
+  async function handleGenerateAiCaseSummary(caseId: string) {
     const reservation = reservations.find((item) => getReservationKey(item) === caseId);
 
     if (!reservation) {
@@ -951,7 +956,21 @@ export default function AdminPage() {
       ...current,
       [caseId]: aiSummary,
     }));
-    setMessage("AI 사건요약 초안이 생성되었습니다.");
+
+    const now = new Date().toISOString();
+    const outputRecord: AiOutputRecord = {
+      case_id: reservation.id || "",
+      created_at: now,
+      id: createAiOutputId(reservation.id || caseId, "assistant_case_summary"),
+      input_snapshot: { events, files, logs, reservation },
+      model: "rules-based",
+      output_text: aiSummary,
+      output_type: "assistant_case_summary",
+      prompt_version: "assistant_case_summary_v1",
+      updated_at: now,
+    };
+
+    await persistAiOutput(outputRecord, "AI 업무도우미 사건요약");
   }
 
   async function handleGenerateAiCaseSummaryWithApi(caseId: string) {
@@ -1039,8 +1058,31 @@ export default function AdminPage() {
         ...current,
         [caseId]: data.result ?? "",
       }));
+      const now = new Date().toISOString();
+      const outputRecord: AiOutputRecord = {
+        case_id: reservation.id || "",
+        created_at: now,
+        id: createAiOutputId(reservation.id || caseId, "case_summary"),
+        input_snapshot: {
+          caseStatus: reservation.case_status,
+          consultationType: reservation.consultation_type ?? reservation.consultationType,
+          evidenceTypes: Array.from(new Set(files.map(getEvidenceTypeLabel))),
+          hasAdminMemo: hasText(reservation.admin_memo),
+          hasConsultation: logs.length > 0 || hasText(reservation.consultation_log),
+          hasEvents: events.length > 0,
+          hasEvidence: files.length > 0,
+          keyIssues: keyIssues.length > 0 ? keyIssues : createCaseTextSnippets(sourceText),
+          studentRole: getGeneralizedPartyLabel(reservation.student_type ?? reservation.studentRole),
+        },
+        model: "gpt-4o-mini",
+        output_text: data.result,
+        output_type: "case_summary",
+        prompt_version: "case_summary_v1",
+        updated_at: now,
+      };
+
+      await persistAiOutput(outputRecord, "AI 사건요약");
       setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
-      setMessage("OpenAI API 기반 AI 사건요약 초안이 생성되었습니다.");
     } catch {
       const errorMessage = "AI 응답 생성 중 오류가 발생했습니다.";
       setAiCaseSummaryApiErrors((current) => ({ ...current, [caseId]: errorMessage }));
@@ -1049,12 +1091,44 @@ export default function AdminPage() {
     }
   }
 
-  function persistAiOutput(record: AiOutputRecord) {
+  async function persistAiOutput(record: AiOutputRecord, title: string) {
+    if (!record.case_id) {
+      setMessage("예약 ID가 없어 AI 결과를 DB에 저장하지 않았습니다.");
+      return false;
+    }
+
+    const content = record.output_text.trim();
+    if (!content) {
+      setMessage("AI 결과 내용이 비어 있어 저장하지 않았습니다.");
+      return false;
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setMessage("Supabase 설정이 없어 AI 결과를 DB에 저장하지 못했습니다.");
+      return false;
+    }
+
+    const { error } = await supabase.from("ai_outputs").insert({
+      content,
+      model: record.model,
+      output_type: record.output_type,
+      reservation_id: record.case_id,
+      title,
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return false;
+    }
+
     setAiOutputs((current) => {
       const next = { ...current, [record.id]: record };
-      writeLocalAiOutputs(next);
       return next;
     });
+
+    setMessage("AI 결과가 DB에 저장되었습니다.");
+    return true;
   }
 
   function updateAiCaseOpinionText(caseId: string, outputText: string) {
@@ -1068,11 +1142,14 @@ export default function AdminPage() {
       return;
     }
 
-    persistAiOutput({
+    setAiOutputs((current) => ({
+      ...current,
+      [existingOutput.id]: {
       ...existingOutput,
       output_text: outputText,
       updated_at: new Date().toISOString(),
-    });
+      },
+    }));
   }
 
   async function handleGenerateAiCaseOpinionWithApi(caseId: string) {
@@ -1138,9 +1215,8 @@ export default function AdminPage() {
         ...current,
         [caseId]: data.result ?? "",
       }));
-      persistAiOutput(outputRecord);
+      await persistAiOutput(outputRecord, "AI 상담의견서");
       setAiCaseOpinionLoadingId((current) => (current === caseId ? null : current));
-      setMessage("AI 상담의견서 초안이 생성되었습니다.");
     } catch {
       const errorMessage = "AI 상담의견서 생성 중 오류가 발생했습니다.";
       setAiCaseOpinionErrors((current) => ({ ...current, [caseId]: errorMessage }));
@@ -1233,9 +1309,8 @@ export default function AdminPage() {
         ...current,
         [caseId]: data.analysis ?? "",
       }));
-      persistAiOutput(outputRecord);
+      await persistAiOutput(outputRecord, "AI 사건분석");
       setIsGeneratingCaseAnalysis((current) => (current === caseId ? null : current));
-      setMessage("AI 사건분석 결과가 생성되었습니다.");
     } catch {
       const errorMessage = "AI 사건분석 생성에 실패했습니다.";
       setCaseAnalysisError((current) => ({ ...current, [caseId]: errorMessage }));
