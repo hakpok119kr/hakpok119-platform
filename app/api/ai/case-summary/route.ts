@@ -18,7 +18,7 @@ type AiCaseSummaryResponse = {
   error?: string;
 };
 
-const DEFAULT_OPENAI_MODEL = "gpt-5.5";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -60,6 +60,8 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error("OpenAI Responses API error", response.status, errorText);
       return jsonResponse({ ok: false, error: "AI 응답 생성 중 오류가 발생했습니다." }, 502);
     }
 
@@ -71,7 +73,8 @@ export async function POST(request: Request) {
     }
 
     return jsonResponse({ ok: true, result });
-  } catch {
+  } catch (error) {
+    console.error("OpenAI Responses API request failed", error);
     return jsonResponse({ ok: false, error: "AI 응답 생성 중 오류가 발생했습니다." }, 502);
   }
 }
@@ -123,9 +126,9 @@ function generalizeStudentRole(value?: string) {
 
 function buildCaseSummaryPrompt(payload: CaseSummaryRequest) {
   return [
-    "학교폭력 행정 사건의 관리자용 사건요약 초안을 작성해 주세요.",
+    "학교폭력 행정 사건을 관리하는 담당자를 위한 사건요약 초안을 작성해 주세요.",
     "이름, 연락처, 이메일, 학교명 등 개인정보를 직접 포함하지 마세요.",
-    "학생은 피해학생, 상대학생, 보호자, 당사자 등 일반화된 표현만 사용하세요.",
+    "학생은 피해학생, 상대학생, 보호자, 당사자처럼 일반화된 표현만 사용하세요.",
     "확인되지 않은 사실은 단정하지 말고 추가 확인 필요로 표시하세요.",
     "",
     "사건자료:",
@@ -139,7 +142,7 @@ function buildCaseSummaryPrompt(payload: CaseSummaryRequest) {
     `- 증거유형: ${payload.evidenceTypes?.length ? payload.evidenceTypes.join(", ") : "미등록"}`,
     `- 주요 쟁점: ${payload.keyIssues?.length ? payload.keyIssues.join(", ") : "추가 확인 필요"}`,
     "",
-    "다음 형식으로 작성해 주세요:",
+    "다음 형식으로 작성해 주세요.",
     "1. 사건 개요",
     "2. 당사자 입장",
     "3. 핵심 쟁점",
