@@ -242,6 +242,23 @@ type AiDocumentReadiness = {
   analyzedAt: string;
 };
 
+type AiOpinionDraft = {
+  opinionType: "피해학생 측" | "가해학생 측" | "보호자" | "일반 의견서";
+  readinessScore: number;
+  readinessLevel: "작성보류" | "보완필요" | "초안작성가능";
+  sections: {
+    caseOverview: string[];
+    partyPosition: string[];
+    keyIssues: string[];
+    evidenceAndReferences: string[];
+    requests: string[];
+    supplementItems: string[];
+    cautions: string[];
+  };
+  draftText: string;
+  analyzedAt: string;
+};
+
 type DetailSectionKey =
   | "reservationInfo"
   | "diagnosis"
@@ -418,6 +435,7 @@ export default function AdminPage() {
   const [aiCaseInsights, setAiCaseInsights] = useState<Record<string, AiCaseInsight>>({});
   const [aiEvidenceInsights, setAiEvidenceInsights] = useState<Record<string, AiEvidenceInsight>>({});
   const [aiDocumentReadiness, setAiDocumentReadiness] = useState<Record<string, AiDocumentReadiness>>({});
+  const [aiOpinionDrafts, setAiOpinionDrafts] = useState<Record<string, AiOpinionDraft>>({});
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     events: [],
     consultLogs: [],
@@ -836,6 +854,11 @@ export default function AdminPage() {
       return;
     }
 
+    if (feature === "draft") {
+      handleGenerateAiOpinionDraft(selectedReservationKey);
+      return;
+    }
+
     const notice = "Ver.2.0에서 제공 예정인 기능입니다.";
     setMessage(notice);
     window.alert(notice);
@@ -929,6 +952,35 @@ export default function AdminPage() {
       [caseId]: readiness,
     }));
     setMessage("AI 문서작성 준비도 결과가 생성되었습니다.");
+  }
+
+  function handleGenerateAiOpinionDraft(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI 의견서 초안을 생성할 사건을 찾을 수 없습니다.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const draft = buildAiOpinionDraft(
+      reservation,
+      logs,
+      events,
+      files,
+      aiDocumentReadiness[caseId],
+      aiEvidenceInsights[caseId],
+      aiCaseInsights[caseId],
+    );
+
+    setAiOpinionDrafts((current) => ({
+      ...current,
+      [caseId]: draft,
+    }));
+    setMessage("AI 의견서 초안이 생성되었습니다.");
   }
 
   function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
@@ -1936,6 +1988,7 @@ export default function AdminPage() {
                 aiDocumentReadiness={aiDocumentReadiness[selectedReservationKey]}
                 aiEvidenceInsight={aiEvidenceInsights[selectedReservationKey]}
                 aiInsight={aiCaseInsights[selectedReservationKey]}
+                aiOpinionDraft={aiOpinionDrafts[selectedReservationKey]}
                 aiSummary={aiCaseSummaries[selectedReservationKey]}
                 onFeatureClick={handleAiFeatureClick}
                 onGenerateDocumentReadiness={() => handleGenerateAiDocumentReadiness(selectedReservationKey)}
@@ -2442,6 +2495,7 @@ function AiAssistantSection({
   aiDocumentReadiness,
   aiEvidenceInsight,
   aiInsight,
+  aiOpinionDraft,
   aiSummary,
   onFeatureClick,
   onGenerateDocumentReadiness,
@@ -2451,6 +2505,7 @@ function AiAssistantSection({
   aiDocumentReadiness?: AiDocumentReadiness;
   aiEvidenceInsight?: AiEvidenceInsight;
   aiInsight?: AiCaseInsight;
+  aiOpinionDraft?: AiOpinionDraft;
   aiSummary?: string;
   onFeatureClick: (feature: "summary" | "evidence" | "readiness" | "draft") => void;
   onGenerateDocumentReadiness: () => void;
@@ -2526,6 +2581,7 @@ function AiAssistantSection({
       {aiInsight ? <AiCaseInsightDashboard insight={aiInsight} /> : null}
       {aiEvidenceInsight ? <AiEvidenceInsightDashboard insight={aiEvidenceInsight} /> : null}
       {aiDocumentReadiness ? <AiDocumentReadinessDashboard readiness={aiDocumentReadiness} /> : null}
+      {aiOpinionDraft ? <AiOpinionDraftDashboard draft={aiOpinionDraft} /> : null}
       {aiSummary ? (
         <div className="mt-4 rounded-xl border border-navy/15 bg-navy/5 p-4">
           <p className="text-sm font-black text-slate-900">AI 사건요약 결과</p>
@@ -2770,6 +2826,73 @@ function AiDocumentReadinessDashboard({ readiness }: { readiness: AiDocumentRead
         <AiInsightList items={readiness.recommendedOrder} title="추천 작성 순서" />
         <AiInsightList items={readiness.cautionPoints} title="주의사항" />
       </div>
+    </div>
+  );
+}
+
+function AiOpinionDraftDashboard({ draft }: { draft: AiOpinionDraft }) {
+  const [copied, setCopied] = useState(false);
+  const readinessBadge = getOpinionDraftReadinessBadge(draft.readinessLevel);
+  const sectionGroups = [
+    { items: draft.sections.caseOverview, title: "1. 사건 개요" },
+    { items: draft.sections.partyPosition, title: "2. 당사자 입장" },
+    { items: draft.sections.keyIssues, title: "3. 주요 쟁점" },
+    { items: draft.sections.evidenceAndReferences, title: "4. 증거 및 참고자료" },
+    { items: draft.sections.requests, title: "5. 요청사항" },
+    { items: draft.sections.supplementItems, title: "6. 보완 필요사항" },
+    { items: draft.sections.cautions, title: "7. 주의 문구" },
+  ];
+
+  async function copyDraft() {
+    try {
+      await navigator.clipboard.writeText(draft.draftText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      window.alert("초안 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.");
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-sm font-black text-slate-900">✍️ AI 의견서 초안</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">개인정보 직접 노출을 피한 mock 초안입니다.</p>
+          {draft.analyzedAt ? (
+            <p className="mt-1 text-xs font-bold text-slate-500">최종 생성시간: {draft.analyzedAt}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="w-fit rounded-full border border-navy/20 bg-white px-3 py-1 text-xs font-black text-navy">
+            유형: {draft.opinionType}
+          </span>
+          <span className={`w-fit rounded-full border px-3 py-1 text-xs font-black ${readinessBadge.className}`}>
+            {readinessBadge.icon} {draft.readinessLevel} · {draft.readinessScore}점
+          </span>
+          <button
+            className="w-fit rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-700 transition hover:border-navy hover:text-navy"
+            onClick={copyDraft}
+            type="button"
+          >
+            {copied ? "복사됨" : "초안 복사"}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {sectionGroups.map((section) => (
+          <AiInsightList items={section.items} key={section.title} title={section.title} />
+        ))}
+      </div>
+
+      <details className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer text-sm font-black text-slate-800">전체 의견서 초안 보기</summary>
+        <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-7 text-slate-700">
+          {draft.draftText}
+        </pre>
+      </details>
     </div>
   );
 }
@@ -4385,6 +4508,175 @@ function buildAiDocumentReadiness(
   };
 }
 
+function buildAiOpinionDraft(
+  caseItem: Reservation,
+  logs: ReservationConsultLog[] = [],
+  events: ReservationEvent[] = [],
+  evidenceFiles: ReservationFile[] = [],
+  aiDocumentReadiness?: AiDocumentReadiness,
+  aiEvidenceInsight?: AiEvidenceInsight,
+  aiCaseInsight?: AiCaseInsight,
+): AiOpinionDraft {
+  const sourceText = [
+    caseItem.student_type,
+    caseItem.studentRole,
+    caseItem.consultation_type,
+    caseItem.consultationType,
+    caseItem.case_status,
+    caseItem.summary,
+    caseItem.content,
+    caseItem.consultation_log,
+    caseItem.admin_memo,
+    caseItem.diagnosis_summary,
+    asText(caseItem.submitted_documents),
+    ...logs.map((log) => log.content),
+  ]
+    .filter(hasText)
+    .join(" ");
+  const opinionType = getOpinionDraftType(caseItem, sourceText);
+  const hasConsultation = logs.length > 0 || hasText(caseItem.consultation_log);
+  const hasCaseSummary = hasText(caseItem.summary) || hasText(caseItem.content) || hasText(caseItem.diagnosis_summary);
+  const hasEvidence = evidenceFiles.length > 0;
+  const hasEvents = events.length > 0;
+  const hasAdminMemo = hasText(caseItem.admin_memo);
+  const readinessScore =
+    aiDocumentReadiness?.readinessScore ??
+    clampScore(
+      (hasConsultation ? 25 : 0) +
+        (hasCaseSummary ? 20 : 0) +
+        (hasEvidence ? 25 : 0) +
+        (hasEvents ? 10 : 0) +
+        (hasAdminMemo ? 10 : 0) +
+        (aiCaseInsight ? 10 : 0),
+    );
+  const readinessLevel = getOpinionDraftReadinessLevel(readinessScore, hasConsultation || hasCaseSummary);
+  const timelineStep = getCaseProgressInfo(caseItem.case_status).step;
+  const evidenceTypes = Array.from(new Set(evidenceFiles.map(getEvidenceTypeLabel)));
+  const issueKeywords = getAiIssueKeywords(sourceText);
+  const hasSubmittedDocuments = hasText(asText(caseItem.submitted_documents));
+  const appealReviewNeeded =
+    aiCaseInsight?.appealPotential === "보통" ||
+    aiCaseInsight?.appealPotential === "높음" ||
+    /불복|조치결정|생기부|4호|5호|6호|7호|8호|9호/.test(sourceText);
+  const roleLabel =
+    opinionType === "피해학생 측"
+      ? "피해학생 측"
+      : opinionType === "가해학생 측"
+        ? "상대학생 측"
+        : opinionType === "보호자"
+          ? "보호자 측"
+          : "당사자 측";
+  const keyIssues = Array.from(
+    new Set([
+      ...issueKeywords,
+      "학교폭력 해당성 및 사실관계 확인",
+      hasEvidence ? "제출자료의 신빙성 및 사실관계 연결성" : "증거자료 보완 필요성",
+      aiCaseInsight?.actionRiskLevel === "높음" || aiCaseInsight?.actionRiskLevel === "매우높음"
+        ? "조치수위 및 생활기록부 영향"
+        : "",
+      appealReviewNeeded ? "조치결정 이후 불복 가능성" : "",
+    ]),
+  ).filter(hasText);
+  const supplementItems = [
+    !hasConsultation ? "상담기록 또는 구체 진술 보완 필요" : "",
+    !hasCaseSummary ? "사건 발생 경위와 시간순 사건개요 정리 필요" : "",
+    !hasEvidence ? "증거자료 등록 및 증거목록 정리 필요" : "",
+    !hasEvents ? "학폭위 일정 또는 의견서 제출기한 확인 필요" : "",
+    !hasAdminMemo ? "담당자 검토 메모 보완 필요" : "",
+    readinessLevel === "작성보류" ? "현재 자료만으로 제출용 의견서 확정은 보류 권장" : "",
+  ].filter(hasText);
+  const requestsByType: Record<AiOpinionDraft["opinionType"], string[]> = {
+    "가해학생 측": [
+      "행위 경위와 관여 정도를 구체적으로 구분하여 판단해 주시기 바랍니다.",
+      "반성, 재발방지 노력, 관계 회복 가능성을 함께 고려해 주시기 바랍니다.",
+      "조치수위는 사실관계와 증거에 비례하여 신중하게 결정해 주시기 바랍니다.",
+    ],
+    "보호자": [
+      "학생의 상황과 보호자의 지도·관리 계획을 함께 고려해 주시기 바랍니다.",
+      "학생 보호와 교육적 회복에 필요한 절차가 충분히 보장되기를 요청합니다.",
+      "불필요한 개인정보 공개가 확대되지 않도록 심의 과정에서 유의해 주시기 바랍니다.",
+    ],
+    "일반 의견서": [
+      "확인된 사실관계와 제출자료를 중심으로 공정하게 판단해 주시기 바랍니다.",
+      "당사자 진술과 객관자료가 서로 일치하는 부분을 우선 검토해 주시기 바랍니다.",
+      "절차 진행 과정에서 제출기한과 의견진술 기회가 보장되기를 요청합니다.",
+    ],
+    "피해학생 측": [
+      "피해 내용과 지속성, 학생의 심리적 영향을 충분히 고려해 주시기 바랍니다.",
+      "재발 방지와 피해학생 보호조치가 실효성 있게 이루어지기를 요청합니다.",
+      "객관자료와 진술자료를 종합하여 사실관계를 면밀히 확인해 주시기 바랍니다.",
+    ],
+  };
+  const cautions = [
+    "본 초안은 등록된 사건자료를 기준으로 한 mock 초안이며, 실제 제출 전 담당 행정사의 검토가 필요합니다.",
+    "학생 이름, 연락처, 학교명 등 개인정보는 제출 전 익명화 또는 최소공개 여부를 확인해야 합니다.",
+    "증거로 확인되지 않은 사실은 단정적으로 기재하지 말고 확인 필요 표현으로 조정해야 합니다.",
+    "상담 원문과 증거 파일명은 개인정보가 포함될 수 있어 본 초안에 직접 노출하지 않았습니다.",
+  ];
+  const sections: AiOpinionDraft["sections"] = {
+    caseOverview: [
+      `본 건은 ${roleLabel} 의견서 초안으로, 현재 사건 단계는 ${timelineStep}로 분류됩니다.`,
+      hasCaseSummary
+        ? "등록된 사건요약 또는 상담요약을 기준으로 기본 사건 흐름을 정리할 수 있습니다."
+        : "사건요약이 충분하지 않아 발생 경위와 시간순 정리가 우선 필요합니다.",
+      hasEvents
+        ? `등록된 일정 ${events.length}건을 기준으로 제출기한과 절차 진행상황을 확인해야 합니다.`
+        : "제출기한 또는 학폭위 일정이 아직 명확히 등록되지 않았습니다.",
+    ],
+    evidenceAndReferences: [
+      hasEvidence
+        ? `현재 등록된 증거유형은 ${evidenceTypes.join(", ")}이며, 총 ${evidenceFiles.length}건의 자료가 확인됩니다.`
+        : "현재 등록된 증거자료가 없어 증거목록 작성 전 자료 확보가 필요합니다.",
+      hasSubmittedDocuments ? "제출서류 정보가 등록되어 있어 기존 제출자료와 중복 여부를 확인할 수 있습니다." : "제출서류 정보는 추가 확인이 필요합니다.",
+      aiEvidenceInsight
+        ? `AI 증거분석 기준 증거등급은 ${aiEvidenceInsight.evidenceGrade}, 증거점수는 ${aiEvidenceInsight.evidenceScore}점입니다.`
+        : "AI 증거분석 결과가 없으므로 증거자료의 활용 방향은 별도 검토가 필요합니다.",
+    ],
+    keyIssues,
+    partyPosition: [
+      opinionType === "피해학생 측"
+        ? "피해학생 측은 피해 사실, 지속성, 심리적 영향, 보호 필요성을 중심으로 의견을 정리합니다."
+        : "",
+      opinionType === "가해학생 측"
+        ? "상대학생 측은 행위 경위, 관여 정도, 반성 여부, 재발방지 계획을 중심으로 의견을 정리합니다."
+        : "",
+      opinionType === "보호자"
+        ? "보호자 측은 학생의 현재 상태, 보호자의 지도 계획, 교육적 회복 가능성을 중심으로 의견을 정리합니다."
+        : "",
+      opinionType === "일반 의견서"
+        ? "당사자 측은 확인된 사실관계와 절차상 요청사항을 중심으로 의견을 정리합니다."
+        : "",
+      hasConsultation
+        ? `상담기록 ${logs.length}건과 입력된 상담 내용을 기준으로 당사자 입장을 구조화할 수 있습니다.`
+        : "상담기록이 부족하여 당사자 입장과 구체 진술 보완이 필요합니다.",
+    ].filter(hasText),
+    requests: requestsByType[opinionType],
+    supplementItems: supplementItems.length > 0 ? supplementItems : ["현재 기준 필수 보완사항은 제한적이나, 제출 전 최신 사실관계와 증거 원본성을 재확인해야 합니다."],
+    cautions,
+  };
+  const draftText = createOpinionDraftText({
+    opinionType,
+    readinessLevel,
+    readinessScore,
+    sections,
+  });
+
+  return {
+    analyzedAt: new Date().toLocaleString("ko-KR", {
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }),
+    draftText,
+    opinionType,
+    readinessLevel,
+    readinessScore,
+    sections,
+  };
+}
+
 function buildAiCaseSummary(
   caseItem: Reservation,
   logs: ReservationConsultLog[] = [],
@@ -4771,6 +5063,78 @@ function getDocumentReadinessBadge(level: AiDocumentReadiness["readinessLevel"])
   };
 
   return badgeByLevel[level];
+}
+
+function getOpinionDraftType(caseItem: Reservation, sourceText: string): AiOpinionDraft["opinionType"] {
+  const studentTypeText = [caseItem.student_type, caseItem.studentRole].filter(hasText).join(" ");
+  const combinedText = [studentTypeText, sourceText].join(" ");
+
+  if (/피해학생|피해자|피해/.test(combinedText)) {
+    return "피해학생 측";
+  }
+
+  if (/가해학생|가해자|상대학생|조치수위|반성/.test(combinedText)) {
+    return "가해학생 측";
+  }
+
+  if (/보호자|학부모|부모|선처|재발방지/.test(combinedText)) {
+    return "보호자";
+  }
+
+  return "일반 의견서";
+}
+
+function getOpinionDraftReadinessLevel(score: number, hasBaseNarrative: boolean): AiOpinionDraft["readinessLevel"] {
+  if (!hasBaseNarrative || score < 40) {
+    return "작성보류";
+  }
+
+  if (score < 70) {
+    return "보완필요";
+  }
+
+  return "초안작성가능";
+}
+
+function getOpinionDraftReadinessBadge(level: AiOpinionDraft["readinessLevel"]) {
+  const badgeByLevel: Record<AiOpinionDraft["readinessLevel"], { className: string; icon: string }> = {
+    작성보류: { className: "border-red-200 bg-red-50 text-red-700", icon: "🔴" },
+    보완필요: { className: "border-yellow-200 bg-yellow-50 text-yellow-700", icon: "🟡" },
+    초안작성가능: { className: "border-green-200 bg-green-50 text-green-700", icon: "🟢" },
+  };
+
+  return badgeByLevel[level];
+}
+
+function createOpinionDraftText({
+  opinionType,
+  readinessLevel,
+  readinessScore,
+  sections,
+}: Pick<AiOpinionDraft, "opinionType" | "readinessLevel" | "readinessScore" | "sections">) {
+  const formatSection = (title: string, items: string[]) => [
+    title,
+    ...items.map((item, index) => `${index + 1}. ${item}`),
+  ];
+
+  return [
+    `[AI 의견서 초안 - ${opinionType}]`,
+    `작성 준비도: ${readinessLevel} (${readinessScore}점)`,
+    "",
+    ...formatSection("1. 사건 개요", sections.caseOverview),
+    "",
+    ...formatSection("2. 당사자 입장", sections.partyPosition),
+    "",
+    ...formatSection("3. 주요 쟁점", sections.keyIssues),
+    "",
+    ...formatSection("4. 증거 및 참고자료", sections.evidenceAndReferences),
+    "",
+    ...formatSection("5. 요청사항", sections.requests),
+    "",
+    ...formatSection("6. 보완 필요사항", sections.supplementItems),
+    "",
+    ...formatSection("7. 주의 문구", sections.cautions),
+  ].join("\n");
 }
 
 function getReasonStatusBadge(status: AiCaseInsight["analysisReasons"][number]["status"]) {
