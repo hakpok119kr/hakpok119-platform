@@ -432,6 +432,8 @@ export default function AdminPage() {
   const [deletingEvidenceFileId, setDeletingEvidenceFileId] = useState<string | null>(null);
   const [evidenceInputVersion, setEvidenceInputVersion] = useState(0);
   const [aiCaseSummaries, setAiCaseSummaries] = useState<Record<string, string>>({});
+  const [aiCaseSummaryApiLoadingId, setAiCaseSummaryApiLoadingId] = useState<string | null>(null);
+  const [aiCaseSummaryApiErrors, setAiCaseSummaryApiErrors] = useState<Record<string, string>>({});
   const [aiCaseInsights, setAiCaseInsights] = useState<Record<string, AiCaseInsight>>({});
   const [aiEvidenceInsights, setAiEvidenceInsights] = useState<Record<string, AiEvidenceInsight>>({});
   const [aiDocumentReadiness, setAiDocumentReadiness] = useState<Record<string, AiDocumentReadiness>>({});
@@ -897,11 +899,25 @@ export default function AdminPage() {
     const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
     const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
     const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
-    const keyIssues = getAiIssueKeywords(
-      [reservation.summary, reservation.content, reservation.consultation_log, reservation.admin_memo, ...logs.map((log) => log.content)]
-        .filter(hasText)
-        .join(" "),
+    const privateValues = [reservation.name, reservation.phone, reservation.email].filter(hasText) as string[];
+    const sourceText = createPrivateSafeCaseText(
+      [
+        reservation.consultation_log,
+        reservation.content,
+        reservation.summary,
+        reservation.admin_memo,
+        ...logs.map((log) => log.content),
+      ],
+      privateValues,
     );
+    const keyIssues = getAiIssueKeywords(sourceText);
+
+    setAiCaseSummaryApiLoadingId(caseId);
+    setAiCaseSummaryApiErrors((current) => {
+      const next = { ...current };
+      delete next[caseId];
+      return next;
+    });
 
     try {
       const response = await fetch("/api/ai/case-summary", {
@@ -913,7 +929,7 @@ export default function AdminPage() {
           hasConsultation: logs.length > 0 || hasText(reservation.consultation_log),
           hasEvents: events.length > 0,
           hasEvidence: files.length > 0,
-          keyIssues,
+          keyIssues: keyIssues.length > 0 ? keyIssues : createCaseTextSnippets(sourceText),
           studentRole: getGeneralizedPartyLabel(reservation.student_type ?? reservation.studentRole),
         }),
         headers: {
@@ -924,6 +940,11 @@ export default function AdminPage() {
       const data = (await response.json()) as { ok: boolean; result?: string; error?: string };
 
       if (!data.ok || !data.result) {
+        const errorMessage = data.error ?? "AI 응답 생성 중 오류가 발생했습니다.";
+        setAiCaseSummaryApiErrors((current) => ({ ...current, [caseId]: errorMessage }));
+        setMessage(errorMessage);
+        setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
+        return;
         setMessage(data.error ?? "AI 응답 생성 중 오류가 발생했습니다.");
         return;
       }
@@ -932,8 +953,14 @@ export default function AdminPage() {
         ...current,
         [caseId]: data.result ?? "",
       }));
+      setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
       setMessage("OpenAI API 기반 AI 사건요약 초안이 생성되었습니다.");
     } catch {
+      const errorMessage = "AI 응답 생성 중 오류가 발생했습니다.";
+      setAiCaseSummaryApiErrors((current) => ({ ...current, [caseId]: errorMessage }));
+      setMessage(errorMessage);
+      setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
+      return;
       setMessage("AI 응답 생성 중 오류가 발생했습니다.");
     }
   }
@@ -2037,13 +2064,21 @@ export default function AdminPage() {
           {selectedReservation ? (
             <div>
               <CaseSummaryPanel events={selectedEvents} reservation={selectedReservation} />
+              <AiCaseSummaryApiPanel
+                error={aiCaseSummaryApiErrors[selectedReservationKey]}
+                isLoading={aiCaseSummaryApiLoadingId === selectedReservationKey}
+                onGenerate={() => handleGenerateAiCaseSummaryWithApi(selectedReservationKey)}
+              />
               <AiAssistantSection
                 aiDocumentReadiness={aiDocumentReadiness[selectedReservationKey]}
                 aiEvidenceInsight={aiEvidenceInsights[selectedReservationKey]}
                 aiInsight={aiCaseInsights[selectedReservationKey]}
                 aiOpinionDraft={aiOpinionDrafts[selectedReservationKey]}
                 aiSummary={aiCaseSummaries[selectedReservationKey]}
+                aiSummaryApiError={aiCaseSummaryApiErrors[selectedReservationKey]}
+                isAiSummaryApiLoading={aiCaseSummaryApiLoadingId === selectedReservationKey}
                 onFeatureClick={handleAiFeatureClick}
+                onGenerateApiSummary={() => handleGenerateAiCaseSummaryWithApi(selectedReservationKey)}
                 onGenerateDocumentReadiness={() => handleGenerateAiDocumentReadiness(selectedReservationKey)}
                 onGenerateInsight={() => handleGenerateAiCaseInsight(selectedReservationKey)}
                 onGenerateSummary={() => handleGenerateAiCaseSummary(selectedReservationKey)}
@@ -2544,13 +2579,55 @@ function CaseSummaryPanel({ events, reservation }: { events: ReservationEvent[];
   );
 }
 
+function AiCaseSummaryApiPanel({
+  error,
+  isLoading,
+  onGenerate,
+}: {
+  error?: string;
+  isLoading: boolean;
+  onGenerate: () => void;
+}) {
+  return (
+    <section className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-black text-slate-900">실제 OpenAI API 사건요약</h2>
+          <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+            이름, 연락처, 이메일, 전화번호를 제외한 사건자료만 전송합니다.
+          </p>
+        </div>
+        <button
+          className="btn-primary whitespace-nowrap px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isLoading}
+          onClick={onGenerate}
+          type="button"
+        >
+          {isLoading ? "AI 사건요약 생성 중..." : "AI 사건요약 생성"}
+        </button>
+      </div>
+      {isLoading ? (
+        <p className="mt-3 text-sm font-bold text-blue-700">/api/ai/case-summary를 호출해 사건요약을 생성하고 있습니다.</p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function AiAssistantSection({
   aiDocumentReadiness,
   aiEvidenceInsight,
   aiInsight,
   aiOpinionDraft,
   aiSummary,
+  aiSummaryApiError,
+  isAiSummaryApiLoading,
   onFeatureClick,
+  onGenerateApiSummary,
   onGenerateDocumentReadiness,
   onGenerateInsight,
   onGenerateSummary,
@@ -2560,7 +2637,10 @@ function AiAssistantSection({
   aiInsight?: AiCaseInsight;
   aiOpinionDraft?: AiOpinionDraft;
   aiSummary?: string;
+  aiSummaryApiError?: string;
+  isAiSummaryApiLoading: boolean;
   onFeatureClick: (feature: "summary" | "evidence" | "readiness" | "draft") => void;
+  onGenerateApiSummary: () => void;
   onGenerateDocumentReadiness: () => void;
   onGenerateInsight: () => void;
   onGenerateSummary: () => void;
@@ -2631,6 +2711,34 @@ function AiAssistantSection({
           </button>
         ))}
       </div>
+      {false ? (
+      <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-black text-slate-900">실제 OpenAI API 사건요약</p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+              이름, 연락처, 이메일, 전화번호를 제외한 사건자료만 전송합니다.
+            </p>
+          </div>
+          <button
+            className="btn-primary whitespace-nowrap px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isAiSummaryApiLoading}
+            onClick={onGenerateApiSummary}
+            type="button"
+          >
+            {isAiSummaryApiLoading ? "AI 사건요약 생성 중..." : "AI 사건요약 생성"}
+          </button>
+        </div>
+        {isAiSummaryApiLoading ? (
+          <p className="mt-3 text-sm font-bold text-blue-700">OpenAI API로 사건요약을 생성하고 있습니다.</p>
+        ) : null}
+        {aiSummaryApiError ? (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+            {aiSummaryApiError}
+          </p>
+        ) : null}
+      </div>
+      ) : null}
       {aiInsight ? <AiCaseInsightDashboard insight={aiInsight} /> : null}
       {aiEvidenceInsight ? <AiEvidenceInsightDashboard insight={aiEvidenceInsight} /> : null}
       {aiDocumentReadiness ? <AiDocumentReadinessDashboard readiness={aiDocumentReadiness} /> : null}
@@ -4833,6 +4941,34 @@ function buildAiCaseSummary(
 
 function hasText(value?: string | null) {
   return Boolean(value?.trim());
+}
+
+function createPrivateSafeCaseText(values: Array<string | null | undefined>, privateValues: string[]) {
+  return removePrivateIdentifiers(values.filter(hasText).join("\n"), privateValues).slice(0, 1200);
+}
+
+function createCaseTextSnippets(text: string) {
+  return text
+    .split(/\n+|[.!?。！？]/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 8)
+    .slice(0, 5)
+    .map((item) => item.slice(0, 80));
+}
+
+function removePrivateIdentifiers(text: string, privateValues: string[]) {
+  return privateValues.reduce((current, value) => {
+    const trimmedValue = value.trim();
+
+    if (!trimmedValue) {
+      return current;
+    }
+
+    return current.split(trimmedValue).join("");
+  }, text)
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "")
+    .replace(/\b\d{2,3}-?\d{3,4}-?\d{4}\b/g, "")
+    .trim();
 }
 
 function clampScore(value: number) {
