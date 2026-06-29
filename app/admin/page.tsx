@@ -885,6 +885,59 @@ export default function AdminPage() {
     setMessage("AI 사건요약 초안이 생성되었습니다.");
   }
 
+  async function handleGenerateAiCaseSummaryWithApi(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI 사건요약을 생성할 사건을 찾을 수 없습니다.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const keyIssues = getAiIssueKeywords(
+      [reservation.summary, reservation.content, reservation.consultation_log, reservation.admin_memo, ...logs.map((log) => log.content)]
+        .filter(hasText)
+        .join(" "),
+    );
+
+    try {
+      const response = await fetch("/api/ai/case-summary", {
+        body: JSON.stringify({
+          caseStatus: reservation.case_status,
+          consultationType: reservation.consultation_type ?? reservation.consultationType,
+          evidenceTypes: Array.from(new Set(files.map(getEvidenceTypeLabel))),
+          hasAdminMemo: hasText(reservation.admin_memo),
+          hasConsultation: logs.length > 0 || hasText(reservation.consultation_log),
+          hasEvents: events.length > 0,
+          hasEvidence: files.length > 0,
+          keyIssues,
+          studentRole: getGeneralizedPartyLabel(reservation.student_type ?? reservation.studentRole),
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const data = (await response.json()) as { ok: boolean; result?: string; error?: string };
+
+      if (!data.ok || !data.result) {
+        setMessage(data.error ?? "AI 응답 생성 중 오류가 발생했습니다.");
+        return;
+      }
+
+      setAiCaseSummaries((current) => ({
+        ...current,
+        [caseId]: data.result ?? "",
+      }));
+      setMessage("OpenAI API 기반 AI 사건요약 초안이 생성되었습니다.");
+    } catch {
+      setMessage("AI 응답 생성 중 오류가 발생했습니다.");
+    }
+  }
+
   function handleGenerateAiCaseInsight(caseId: string) {
     const reservation = reservations.find((item) => getReservationKey(item) === caseId);
 
