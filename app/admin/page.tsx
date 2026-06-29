@@ -231,6 +231,17 @@ type AiEvidenceInsight = {
   analyzedAt: string;
 };
 
+type AiDocumentReadiness = {
+  readinessScore: number;
+  readinessLevel: "부족" | "보통" | "작성가능" | "작성적합";
+  availableDocuments: string[];
+  notReadyDocuments: string[];
+  missingRequirements: string[];
+  recommendedOrder: string[];
+  cautionPoints: string[];
+  analyzedAt: string;
+};
+
 type DetailSectionKey =
   | "reservationInfo"
   | "diagnosis"
@@ -406,6 +417,7 @@ export default function AdminPage() {
   const [aiCaseSummaries, setAiCaseSummaries] = useState<Record<string, string>>({});
   const [aiCaseInsights, setAiCaseInsights] = useState<Record<string, AiCaseInsight>>({});
   const [aiEvidenceInsights, setAiEvidenceInsights] = useState<Record<string, AiEvidenceInsight>>({});
+  const [aiDocumentReadiness, setAiDocumentReadiness] = useState<Record<string, AiDocumentReadiness>>({});
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     events: [],
     consultLogs: [],
@@ -813,9 +825,14 @@ export default function AdminPage() {
     }
   }
 
-  function handleAiFeatureClick(feature: "summary" | "evidence" | "draft") {
+  function handleAiFeatureClick(feature: "summary" | "evidence" | "readiness" | "draft") {
     if (feature === "evidence") {
       handleGenerateAiEvidenceInsight(selectedReservationKey);
+      return;
+    }
+
+    if (feature === "readiness") {
+      handleGenerateAiDocumentReadiness(selectedReservationKey);
       return;
     }
 
@@ -884,6 +901,34 @@ export default function AdminPage() {
       [caseId]: insight,
     }));
     setMessage("AI 증거분석 결과가 생성되었습니다.");
+  }
+
+  function handleGenerateAiDocumentReadiness(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI 문서작성 준비도를 생성할 사건을 찾을 수 없습니다.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const readiness = buildAiDocumentReadiness(
+      reservation,
+      logs,
+      events,
+      files,
+      aiEvidenceInsights[caseId],
+      aiCaseInsights[caseId],
+    );
+
+    setAiDocumentReadiness((current) => ({
+      ...current,
+      [caseId]: readiness,
+    }));
+    setMessage("AI 문서작성 준비도 결과가 생성되었습니다.");
   }
 
   function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
@@ -1888,10 +1933,12 @@ export default function AdminPage() {
             <div>
               <CaseSummaryPanel events={selectedEvents} reservation={selectedReservation} />
               <AiAssistantSection
+                aiDocumentReadiness={aiDocumentReadiness[selectedReservationKey]}
                 aiEvidenceInsight={aiEvidenceInsights[selectedReservationKey]}
                 aiInsight={aiCaseInsights[selectedReservationKey]}
                 aiSummary={aiCaseSummaries[selectedReservationKey]}
                 onFeatureClick={handleAiFeatureClick}
+                onGenerateDocumentReadiness={() => handleGenerateAiDocumentReadiness(selectedReservationKey)}
                 onGenerateInsight={() => handleGenerateAiCaseInsight(selectedReservationKey)}
                 onGenerateSummary={() => handleGenerateAiCaseSummary(selectedReservationKey)}
               />
@@ -2392,17 +2439,21 @@ function CaseSummaryPanel({ events, reservation }: { events: ReservationEvent[];
 }
 
 function AiAssistantSection({
+  aiDocumentReadiness,
   aiEvidenceInsight,
   aiInsight,
   aiSummary,
   onFeatureClick,
+  onGenerateDocumentReadiness,
   onGenerateInsight,
   onGenerateSummary,
 }: {
+  aiDocumentReadiness?: AiDocumentReadiness;
   aiEvidenceInsight?: AiEvidenceInsight;
   aiInsight?: AiCaseInsight;
   aiSummary?: string;
-  onFeatureClick: (feature: "summary" | "evidence" | "draft") => void;
+  onFeatureClick: (feature: "summary" | "evidence" | "readiness" | "draft") => void;
+  onGenerateDocumentReadiness: () => void;
   onGenerateInsight: () => void;
   onGenerateSummary: () => void;
 }) {
@@ -2421,6 +2472,11 @@ function AiAssistantSection({
       description: "업로드된 증거자료와 제출서류를 바탕으로 부족자료를 점검합니다.",
       id: "evidence" as const,
       title: "AI 증거분석",
+    },
+    {
+      description: "의견서, 반성문, 탄원서, 행정심판 청구서 등 문서작성 가능 여부를 점검합니다.",
+      id: "readiness" as const,
+      title: "AI 문서작성 준비도",
     },
     {
       description: "사건 요약과 상담기록을 바탕으로 의견서 초안을 작성합니다.",
@@ -2451,6 +2507,11 @@ function AiAssistantSection({
                 return;
               }
 
+              if (feature.id === "readiness") {
+                onGenerateDocumentReadiness();
+                return;
+              }
+
               onFeatureClick(feature.id);
             }}
             type="button"
@@ -2464,6 +2525,7 @@ function AiAssistantSection({
       </div>
       {aiInsight ? <AiCaseInsightDashboard insight={aiInsight} /> : null}
       {aiEvidenceInsight ? <AiEvidenceInsightDashboard insight={aiEvidenceInsight} /> : null}
+      {aiDocumentReadiness ? <AiDocumentReadinessDashboard readiness={aiDocumentReadiness} /> : null}
       {aiSummary ? (
         <div className="mt-4 rounded-xl border border-navy/15 bg-navy/5 p-4">
           <p className="text-sm font-black text-slate-900">AI 사건요약 결과</p>
@@ -2666,6 +2728,47 @@ function AiEvidenceInsightDashboard({ insight }: { insight: AiEvidenceInsight })
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <AiInsightList items={insight.usageDirection} title="증거 활용 방향" />
         <AiInsightList items={insight.cautions} title="주의사항" />
+      </div>
+    </div>
+  );
+}
+
+function AiDocumentReadinessDashboard({ readiness }: { readiness: AiDocumentReadiness }) {
+  const levelBadge = getDocumentReadinessBadge(readiness.readinessLevel);
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-sm font-black text-slate-900">📝 AI 문서작성 준비도</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">현재 사건자료 기준 mock 분석 결과입니다.</p>
+          {readiness.analyzedAt ? (
+            <p className="mt-1 text-xs font-bold text-slate-500">최종 분석시간: {readiness.analyzedAt}</p>
+          ) : null}
+        </div>
+        <span className={`w-fit rounded-full border px-3 py-1 text-xs font-black ${levelBadge.className}`}>
+          {levelBadge.icon} 준비도 등급: {readiness.readinessLevel}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-[220px_1fr]">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <p className="text-xs font-black text-slate-500">준비도 점수</p>
+          <p className="mt-2 text-3xl font-black text-navy">{readiness.readinessScore}점</p>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
+            <div className="h-full rounded-full bg-navy" style={{ width: `${readiness.readinessScore}%` }} />
+          </div>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <AiInsightList items={readiness.availableDocuments} title="작성 가능 문서" />
+          <AiInsightList items={readiness.notReadyDocuments} title="아직 준비가 부족한 문서" />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <AiInsightList items={readiness.missingRequirements} title="부족요건" />
+        <AiInsightList items={readiness.recommendedOrder} title="추천 작성 순서" />
+        <AiInsightList items={readiness.cautionPoints} title="주의사항" />
       </div>
     </div>
   );
@@ -4167,6 +4270,121 @@ function buildAiEvidenceInsight(
   };
 }
 
+function buildAiDocumentReadiness(
+  caseItem: Reservation,
+  logs: ReservationConsultLog[] = [],
+  events: ReservationEvent[] = [],
+  evidenceFiles: ReservationFile[] = [],
+  aiEvidenceInsight?: AiEvidenceInsight,
+  aiCaseInsight?: AiCaseInsight,
+): AiDocumentReadiness {
+  const consultationTexts = [
+    caseItem.student_type,
+    caseItem.studentRole,
+    caseItem.consultation_type,
+    caseItem.consultationType,
+    caseItem.case_status,
+    caseItem.summary,
+    caseItem.content,
+    caseItem.consultation_log,
+    caseItem.admin_memo,
+    caseItem.diagnosis_summary,
+    asText(caseItem.submitted_documents),
+    ...logs.map((log) => log.content),
+  ]
+    .filter(hasText)
+    .join(" ");
+  const hasConsultation = logs.length > 0 || hasText(caseItem.consultation_log);
+  const hasCaseSummary = hasText(caseItem.summary) || hasText(caseItem.content) || hasText(caseItem.diagnosis_summary);
+  const hasEvidence = evidenceFiles.length > 0;
+  const hasEvents = events.length > 0;
+  const hasAdminMemo = hasText(caseItem.admin_memo);
+  const readinessScore = clampScore(
+    (hasConsultation ? 20 : 0) +
+      (hasCaseSummary ? 15 : 0) +
+      (hasEvidence ? 20 : 0) +
+      (hasEvents ? 10 : 0) +
+      (hasAdminMemo ? 10 : 0) +
+      (aiEvidenceInsight ? 10 : 0) +
+      (aiCaseInsight ? 15 : 0),
+  );
+  const readinessLevel = getDocumentReadinessLevel(readinessScore);
+  const availableDocuments: string[] = [];
+  const notReadyDocuments: string[] = [];
+  const addDocumentStatus = (documentName: string, isAvailable: boolean) => {
+    if (isAvailable) {
+      availableDocuments.push(documentName);
+      return;
+    }
+
+    notReadyDocuments.push(documentName);
+  };
+  const opinionReadyCount = [hasConsultation, hasCaseSummary, hasEvidence].filter(Boolean).length;
+  const reflectionReady = /가해학생|상대학생|조치수위|반성/.test(consultationTexts);
+  const petitionReady = /보호자|학부모|선처|반성|재발방지/.test(consultationTexts);
+  const statementReady = hasConsultation || hasCaseSummary;
+  const appealKeywordCount = getUniqueKeywordMatchCount(consultationTexts, [
+    "불복",
+    "조치결정",
+    "생기부",
+    "4호",
+    "5호",
+    "6호",
+    "7호",
+    "8호",
+    "9호",
+  ]);
+  const appealReady = (aiCaseInsight?.appealPotential === "보통" || aiCaseInsight?.appealPotential === "높음") || appealKeywordCount > 0;
+
+  addDocumentStatus("의견서", opinionReadyCount >= 2);
+  addDocumentStatus("반성문", reflectionReady);
+  addDocumentStatus("탄원서", petitionReady);
+  addDocumentStatus("진술서", statementReady);
+  addDocumentStatus("증거목록", hasEvidence);
+  addDocumentStatus("행정심판 청구서", appealReady);
+
+  const recommendedOrder = [
+    !hasEvidence ? "증거자료 확보 후 문서작성 권장" : "",
+    hasEvents ? "제출기한 기준으로 의견서 우선 작성 권장" : "",
+    "사건개요 정리",
+    "증거목록 작성",
+    "의견서 초안 작성",
+    "필요 시 반성문/탄원서 작성",
+    "조치결정 후 행정심판 검토",
+    aiCaseInsight?.appealPotential === "높음" || appealKeywordCount >= 2
+      ? "조치결정서 확보 후 행정심판 청구서 검토 권장"
+      : "",
+  ].filter(hasText);
+
+  return {
+    analyzedAt: new Date().toLocaleString("ko-KR", {
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }),
+    availableDocuments: availableDocuments.length > 0 ? availableDocuments : ["현재 작성 가능 후보 문서 없음"],
+    cautionPoints: [
+      "본 문서작성 준비도는 등록된 사건자료를 기준으로 한 참고용 분석입니다.",
+      "실제 제출 문서는 담당 행정사의 검토 후 확정해야 합니다.",
+      "개인정보, 민감정보, 학생 이름은 제출 전 익명화 또는 최소공개 여부를 검토해야 합니다.",
+      "증거 없는 사실은 문서에 단정적으로 기재하지 않도록 주의해야 합니다.",
+    ],
+    missingRequirements: [
+      !hasConsultation ? "상담기록 보완 필요" : "",
+      !hasEvidence ? "증거자료 등록 필요" : "",
+      !hasEvents ? "의견서 제출기한 또는 학폭위 일정 확인 필요" : "",
+      !hasAdminMemo ? "담당자 검토 메모 필요" : "",
+      !hasCaseSummary ? "사건요약 정리 필요" : "",
+    ].filter(hasText),
+    notReadyDocuments: notReadyDocuments.length > 0 ? notReadyDocuments : ["현재 기준 준비 부족 문서 없음"],
+    readinessLevel,
+    readinessScore,
+    recommendedOrder,
+  };
+}
+
 function buildAiCaseSummary(
   caseItem: Reservation,
   logs: ReservationConsultLog[] = [],
@@ -4526,6 +4744,33 @@ function getAppealBadge(level: AiCaseInsight["appealPotential"]) {
   };
 
   return badgeByLevel[level] ?? { className: "border-slate-200 bg-slate-50 text-slate-700", icon: "⚪" };
+}
+
+function getDocumentReadinessLevel(score: number): AiDocumentReadiness["readinessLevel"] {
+  if (score >= 80) {
+    return "작성적합";
+  }
+
+  if (score >= 60) {
+    return "작성가능";
+  }
+
+  if (score >= 40) {
+    return "보통";
+  }
+
+  return "부족";
+}
+
+function getDocumentReadinessBadge(level: AiDocumentReadiness["readinessLevel"]) {
+  const badgeByLevel: Record<AiDocumentReadiness["readinessLevel"], { className: string; icon: string }> = {
+    부족: { className: "border-red-200 bg-red-50 text-red-700", icon: "🔴" },
+    보통: { className: "border-yellow-200 bg-yellow-50 text-yellow-700", icon: "🟡" },
+    작성가능: { className: "border-green-200 bg-green-50 text-green-700", icon: "🟢" },
+    작성적합: { className: "border-blue-200 bg-blue-50 text-blue-700", icon: "🔵" },
+  };
+
+  return badgeByLevel[level];
 }
 
 function getReasonStatusBadge(status: AiCaseInsight["analysisReasons"][number]["status"]) {
