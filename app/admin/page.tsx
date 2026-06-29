@@ -486,6 +486,9 @@ export default function AdminPage() {
   const [aiCaseOpinions, setAiCaseOpinions] = useState<Record<string, string>>({});
   const [aiCaseOpinionLoadingId, setAiCaseOpinionLoadingId] = useState<string | null>(null);
   const [aiCaseOpinionErrors, setAiCaseOpinionErrors] = useState<Record<string, string>>({});
+  const [aiCaseAnalysis, setAiCaseAnalysis] = useState<Record<string, string>>({});
+  const [isGeneratingCaseAnalysis, setIsGeneratingCaseAnalysis] = useState<string | null>(null);
+  const [caseAnalysisError, setCaseAnalysisError] = useState<Record<string, string>>({});
   const [aiOutputs, setAiOutputs] = useState<Record<string, AiOutputRecord>>({});
   const [aiCaseInsights, setAiCaseInsights] = useState<Record<string, AiCaseInsight>>({});
   const [aiEvidenceInsights, setAiEvidenceInsights] = useState<Record<string, AiEvidenceInsight>>({});
@@ -899,7 +902,12 @@ export default function AdminPage() {
     }
   }
 
-  function handleAiFeatureClick(feature: "summary" | "evidence" | "readiness" | "draft" | "caseOpinion") {
+  function handleAiFeatureClick(feature: "summary" | "caseAnalysis" | "evidence" | "readiness" | "draft" | "caseOpinion") {
+    if (feature === "caseAnalysis") {
+      void handleGenerateAiCaseAnalysisWithApi(selectedReservationKey);
+      return;
+    }
+
     if (feature === "evidence") {
       handleGenerateAiEvidenceInsight(selectedReservationKey);
       return;
@@ -1121,6 +1129,101 @@ export default function AdminPage() {
       setAiCaseOpinionErrors((current) => ({ ...current, [caseId]: errorMessage }));
       setMessage(errorMessage);
       setAiCaseOpinionLoadingId((current) => (current === caseId ? null : current));
+    }
+  }
+
+  async function handleGenerateAiCaseAnalysisWithApi(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI 사건분석을 생성할 사건을 찾을 수 없습니다.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const existingCaseSummary = aiCaseSummaries[caseId] ?? buildAiCaseSummary(reservation, logs, events, files);
+    const privateValues = [reservation.name, reservation.phone, reservation.email].filter(hasText) as string[];
+    const consultationContent = createPrivateSafeCaseText(
+      [
+        reservation.consultation_log,
+        reservation.summary,
+        reservation.diagnosis_summary,
+        ...logs.map((log) => log.content),
+      ],
+      privateValues,
+    );
+    const incidentSummary = createPrivateSafeCaseText(
+      [existingCaseSummary, reservation.content, reservation.admin_memo],
+      privateValues,
+    );
+    const submittedDocuments = createPrivateSafeCaseText(
+      [asText(reservation.submitted_documents), ...files.map((file) => file.file_name)],
+      privateValues,
+    );
+    const existingOpinion = createPrivateSafeCaseText([aiCaseOpinions[caseId]], privateValues);
+    const inputSnapshot = {
+      caseStatus: removePrivateIdentifiers(reservation.case_status || "", privateValues),
+      consultationContent,
+      existingOpinion,
+      incidentSummary,
+      studentName: removePrivateIdentifiers(reservation.name || "", privateValues),
+      submittedDocuments,
+      userRole: getGeneralizedPartyLabel(reservation.student_type ?? reservation.studentRole),
+    };
+
+    setIsGeneratingCaseAnalysis(caseId);
+    setCaseAnalysisError((current) => {
+      const next = { ...current };
+      delete next[caseId];
+      return next;
+    });
+
+    try {
+      const response = await fetch("/api/ai/case-analysis", {
+        body: JSON.stringify(inputSnapshot),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const data = (await response.json()) as { analysis?: string; error?: string };
+
+      if (!response.ok || !data.analysis) {
+        const errorMessage = data.error ?? "AI 사건분석 생성에 실패했습니다.";
+        setCaseAnalysisError((current) => ({ ...current, [caseId]: errorMessage }));
+        setMessage(errorMessage);
+        setIsGeneratingCaseAnalysis((current) => (current === caseId ? null : current));
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const outputRecord: AiOutputRecord = {
+        case_id: reservation.id || caseId,
+        created_at: now,
+        id: createAiOutputId(reservation.id || caseId, "case_analysis"),
+        input_snapshot: inputSnapshot,
+        model: "gpt-4o-mini",
+        output_text: data.analysis,
+        output_type: "case_analysis",
+        prompt_version: "case_analysis_v1",
+        updated_at: now,
+      };
+
+      setAiCaseAnalysis((current) => ({
+        ...current,
+        [caseId]: data.analysis ?? "",
+      }));
+      persistAiOutput(outputRecord);
+      setIsGeneratingCaseAnalysis((current) => (current === caseId ? null : current));
+      setMessage("AI 사건분석 결과가 생성되었습니다.");
+    } catch {
+      const errorMessage = "AI 사건분석 생성에 실패했습니다.";
+      setCaseAnalysisError((current) => ({ ...current, [caseId]: errorMessage }));
+      setMessage(errorMessage);
+      setIsGeneratingCaseAnalysis((current) => (current === caseId ? null : current));
     }
   }
 
@@ -2233,10 +2336,13 @@ export default function AdminPage() {
                 aiEvidenceInsight={aiEvidenceInsights[selectedReservationKey]}
                 aiInsight={aiCaseInsights[selectedReservationKey]}
                 aiOpinionDraft={aiOpinionDrafts[selectedReservationKey]}
+                aiCaseAnalysis={aiCaseAnalysis[selectedReservationKey]}
+                aiCaseAnalysisError={caseAnalysisError[selectedReservationKey]}
                 aiCaseOpinion={aiCaseOpinions[selectedReservationKey]}
                 aiCaseOpinionError={aiCaseOpinionErrors[selectedReservationKey]}
                 aiSummary={aiCaseSummaries[selectedReservationKey]}
                 aiSummaryApiError={aiCaseSummaryApiErrors[selectedReservationKey]}
+                isAiCaseAnalysisLoading={isGeneratingCaseAnalysis === selectedReservationKey}
                 isAiCaseOpinionLoading={aiCaseOpinionLoadingId === selectedReservationKey}
                 isAiSummaryApiLoading={aiCaseSummaryApiLoadingId === selectedReservationKey}
                 onFeatureClick={handleAiFeatureClick}
@@ -2782,6 +2888,8 @@ function AiCaseSummaryApiPanel({
 }
 
 function AiAssistantSection({
+  aiCaseAnalysis,
+  aiCaseAnalysisError,
   aiCaseOpinion,
   aiCaseOpinionError,
   aiDocumentReadiness,
@@ -2790,6 +2898,7 @@ function AiAssistantSection({
   aiOpinionDraft,
   aiSummary,
   aiSummaryApiError,
+  isAiCaseAnalysisLoading,
   isAiCaseOpinionLoading,
   isAiSummaryApiLoading,
   onCaseOpinionChange,
@@ -2799,6 +2908,8 @@ function AiAssistantSection({
   onGenerateInsight,
   onGenerateSummary,
 }: {
+  aiCaseAnalysis?: string;
+  aiCaseAnalysisError?: string;
   aiCaseOpinion?: string;
   aiCaseOpinionError?: string;
   aiDocumentReadiness?: AiDocumentReadiness;
@@ -2807,10 +2918,11 @@ function AiAssistantSection({
   aiOpinionDraft?: AiOpinionDraft;
   aiSummary?: string;
   aiSummaryApiError?: string;
+  isAiCaseAnalysisLoading: boolean;
   isAiCaseOpinionLoading: boolean;
   isAiSummaryApiLoading: boolean;
   onCaseOpinionChange: (value: string) => void;
-  onFeatureClick: (feature: "summary" | "evidence" | "readiness" | "draft" | "caseOpinion") => void;
+  onFeatureClick: (feature: "summary" | "caseAnalysis" | "evidence" | "readiness" | "draft" | "caseOpinion") => void;
   onGenerateApiSummary: () => void;
   onGenerateDocumentReadiness: () => void;
   onGenerateInsight: () => void;
@@ -2820,12 +2932,22 @@ function AiAssistantSection({
     {
       description: "상담기록, 일정, 무료진단 결과를 바탕으로 사건 개요를 정리합니다.",
       id: "summary" as const,
-      title: "AI 사건요약 생성",
+      title: "AI 상담기록",
+    },
+    {
+      description: "상담기록, 사건상태, 제출자료, 기존 의견서를 바탕으로 객관적 사건분석을 생성합니다.",
+      id: "caseAnalysis" as const,
+      title: "AI 사건분석 생성",
+    },
+    {
+      description: "사건 요약과 상담기록을 바탕으로 의견서 초안을 작성합니다.",
+      id: "caseOpinion" as const,
+      title: "AI 의견서",
     },
     {
       description: "사건 준비도, 증거충족도, 위험도와 우선업무를 규칙 기반으로 점검합니다.",
       id: "insight" as const,
-      title: "AI 사건분석 생성",
+      title: "AI 사건대시보드 생성",
     },
     {
       description: "업로드된 증거자료와 제출서류를 바탕으로 부족자료를 점검합니다.",
@@ -2836,11 +2958,6 @@ function AiAssistantSection({
       description: "의견서, 반성문, 탄원서, 행정심판 청구서 등 문서작성 가능 여부를 점검합니다.",
       id: "readiness" as const,
       title: "AI 문서작성 준비도",
-    },
-    {
-      description: "사건 요약과 상담기록을 바탕으로 의견서 초안을 작성합니다.",
-      id: "caseOpinion" as const,
-      title: "AI 상담의견서 작성",
     },
     {
       description: "기존 mock 규칙 기반으로 간단한 의견서 초안을 작성합니다.",
@@ -2916,6 +3033,11 @@ function AiAssistantSection({
       </div>
       ) : null}
       {aiInsight ? <AiCaseInsightDashboard insight={aiInsight} /> : null}
+      <AiCaseAnalysisResult
+        error={aiCaseAnalysisError}
+        isLoading={isAiCaseAnalysisLoading}
+        value={aiCaseAnalysis}
+      />
       {aiEvidenceInsight ? <AiEvidenceInsightDashboard insight={aiEvidenceInsight} /> : null}
       {aiDocumentReadiness ? <AiDocumentReadinessDashboard readiness={aiDocumentReadiness} /> : null}
       <AiCaseOpinionEditor
@@ -2934,6 +3056,39 @@ function AiAssistantSection({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function AiCaseAnalysisResult({
+  error,
+  isLoading,
+  value,
+}: {
+  error?: string;
+  isLoading: boolean;
+  value?: string;
+}) {
+  if (!isLoading && !error && !value) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <p className="text-sm font-black text-slate-900">AI 사건분석 결과</p>
+      {isLoading ? (
+        <p className="mt-3 text-sm font-bold text-blue-700">AI 사건분석을 생성하는 중입니다...</p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+          AI 사건분석 생성에 실패했습니다.
+        </p>
+      ) : null}
+      {value ? (
+        <pre className="mt-3 max-h-[560px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-blue-100 bg-white p-4 font-sans text-sm leading-7 text-slate-800 shadow-inner">
+          {value}
+        </pre>
+      ) : null}
+    </div>
   );
 }
 
