@@ -6,6 +6,7 @@ import { getSupabaseClient } from "@/lib/supabase/client";
 
 const STORAGE_KEY = "hakpok119-reservations";
 const ADMIN_AUTH_KEY = "hakpok119-admin-auth";
+const AI_OUTPUTS_STORAGE_KEY = "hakpok119-ai-outputs";
 const ADMIN_PASSWORD = "119admin";
 
 type DataSource = "supabase" | "local";
@@ -259,6 +260,37 @@ type AiOpinionDraft = {
   analyzedAt: string;
 };
 
+type AiOutputType = "case_summary" | "case_opinion" | "case_analysis" | "evidence_analysis";
+
+type AiOutputRecord = {
+  id: string;
+  case_id: string;
+  output_type: AiOutputType;
+  model: string;
+  prompt_version: string;
+  input_snapshot: unknown;
+  output_text: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type CaseOpinionInputSnapshot = {
+  caseStatus: string;
+  consultationType: string;
+  studentRole: string;
+  consultationContent: string;
+  caseContent: string;
+  hasSubmittedDocuments: boolean;
+  hasEvidence: boolean;
+  existingCaseSummary: string;
+  checklistStatus: {
+    completed: string[];
+    pending: string[];
+  };
+  submittedDocumentStatus: string;
+  evidenceTypes: string[];
+};
+
 type DetailSectionKey =
   | "reservationInfo"
   | "diagnosis"
@@ -295,6 +327,23 @@ function readLocalReservations() {
 
 function writeLocalReservations(reservations: Reservation[]) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(reservations));
+}
+
+function readLocalAiOutputs(): Record<string, AiOutputRecord> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const saved = window.localStorage.getItem(AI_OUTPUTS_STORAGE_KEY);
+    return saved ? (JSON.parse(saved) as Record<string, AiOutputRecord>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalAiOutputs(outputs: Record<string, AiOutputRecord>) {
+  window.localStorage.setItem(AI_OUTPUTS_STORAGE_KEY, JSON.stringify(outputs));
 }
 
 function createConsultLogForm(counselor = ""): ConsultLogForm {
@@ -434,6 +483,10 @@ export default function AdminPage() {
   const [aiCaseSummaries, setAiCaseSummaries] = useState<Record<string, string>>({});
   const [aiCaseSummaryApiLoadingId, setAiCaseSummaryApiLoadingId] = useState<string | null>(null);
   const [aiCaseSummaryApiErrors, setAiCaseSummaryApiErrors] = useState<Record<string, string>>({});
+  const [aiCaseOpinions, setAiCaseOpinions] = useState<Record<string, string>>({});
+  const [aiCaseOpinionLoadingId, setAiCaseOpinionLoadingId] = useState<string | null>(null);
+  const [aiCaseOpinionErrors, setAiCaseOpinionErrors] = useState<Record<string, string>>({});
+  const [aiOutputs, setAiOutputs] = useState<Record<string, AiOutputRecord>>({});
   const [aiCaseInsights, setAiCaseInsights] = useState<Record<string, AiCaseInsight>>({});
   const [aiEvidenceInsights, setAiEvidenceInsights] = useState<Record<string, AiEvidenceInsight>>({});
   const [aiDocumentReadiness, setAiDocumentReadiness] = useState<Record<string, AiDocumentReadiness>>({});
@@ -524,6 +577,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     setIsAuthed(window.localStorage.getItem(ADMIN_AUTH_KEY) === "true");
+    setAiOutputs(readLocalAiOutputs());
   }, []);
 
   useEffect(() => {
@@ -845,7 +899,7 @@ export default function AdminPage() {
     }
   }
 
-  function handleAiFeatureClick(feature: "summary" | "evidence" | "readiness" | "draft") {
+  function handleAiFeatureClick(feature: "summary" | "evidence" | "readiness" | "draft" | "caseOpinion") {
     if (feature === "evidence") {
       handleGenerateAiEvidenceInsight(selectedReservationKey);
       return;
@@ -858,6 +912,11 @@ export default function AdminPage() {
 
     if (feature === "draft") {
       handleGenerateAiOpinionDraft(selectedReservationKey);
+      return;
+    }
+
+    if (feature === "caseOpinion") {
+      void handleGenerateAiCaseOpinionWithApi(selectedReservationKey);
       return;
     }
 
@@ -962,6 +1021,106 @@ export default function AdminPage() {
       setAiCaseSummaryApiLoadingId((current) => (current === caseId ? null : current));
       return;
       setMessage("AI 응답 생성 중 오류가 발생했습니다.");
+    }
+  }
+
+  function persistAiOutput(record: AiOutputRecord) {
+    setAiOutputs((current) => {
+      const next = { ...current, [record.id]: record };
+      writeLocalAiOutputs(next);
+      return next;
+    });
+  }
+
+  function updateAiCaseOpinionText(caseId: string, outputText: string) {
+    setAiCaseOpinions((current) => ({ ...current, [caseId]: outputText }));
+
+    const existingOutput = Object.values(aiOutputs)
+      .filter((output) => output.case_id === caseId && output.output_type === "case_opinion")
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+
+    if (!existingOutput) {
+      return;
+    }
+
+    persistAiOutput({
+      ...existingOutput,
+      output_text: outputText,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  async function handleGenerateAiCaseOpinionWithApi(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI 상담의견서를 생성할 사건을 찾을 수 없습니다.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const existingCaseSummary = aiCaseSummaries[caseId] ?? buildAiCaseSummary(reservation, logs, events, files);
+    const inputSnapshot = buildCaseOpinionInputSnapshot(reservation, logs, events, files, existingCaseSummary);
+
+    setAiCaseOpinionLoadingId(caseId);
+    setAiCaseOpinionErrors((current) => {
+      const next = { ...current };
+      delete next[caseId];
+      return next;
+    });
+
+    try {
+      const response = await fetch("/api/ai/case-opinion", {
+        body: JSON.stringify(inputSnapshot),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        result?: string;
+        error?: string;
+        model?: string;
+        promptVersion?: string;
+      };
+
+      if (!data.ok || !data.result) {
+        const errorMessage = data.error ?? "AI 상담의견서 생성 중 오류가 발생했습니다.";
+        setAiCaseOpinionErrors((current) => ({ ...current, [caseId]: errorMessage }));
+        setMessage(errorMessage);
+        setAiCaseOpinionLoadingId((current) => (current === caseId ? null : current));
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const outputRecord: AiOutputRecord = {
+        case_id: reservation.id || caseId,
+        created_at: now,
+        id: createAiOutputId(reservation.id || caseId, "case_opinion"),
+        input_snapshot: inputSnapshot,
+        model: data.model ?? "gpt-4o-mini",
+        output_text: data.result,
+        output_type: "case_opinion",
+        prompt_version: data.promptVersion ?? "case_opinion_v1",
+        updated_at: now,
+      };
+
+      setAiCaseOpinions((current) => ({
+        ...current,
+        [caseId]: data.result ?? "",
+      }));
+      persistAiOutput(outputRecord);
+      setAiCaseOpinionLoadingId((current) => (current === caseId ? null : current));
+      setMessage("AI 상담의견서 초안이 생성되었습니다.");
+    } catch {
+      const errorMessage = "AI 상담의견서 생성 중 오류가 발생했습니다.";
+      setAiCaseOpinionErrors((current) => ({ ...current, [caseId]: errorMessage }));
+      setMessage(errorMessage);
+      setAiCaseOpinionLoadingId((current) => (current === caseId ? null : current));
     }
   }
 
@@ -2074,10 +2233,14 @@ export default function AdminPage() {
                 aiEvidenceInsight={aiEvidenceInsights[selectedReservationKey]}
                 aiInsight={aiCaseInsights[selectedReservationKey]}
                 aiOpinionDraft={aiOpinionDrafts[selectedReservationKey]}
+                aiCaseOpinion={aiCaseOpinions[selectedReservationKey]}
+                aiCaseOpinionError={aiCaseOpinionErrors[selectedReservationKey]}
                 aiSummary={aiCaseSummaries[selectedReservationKey]}
                 aiSummaryApiError={aiCaseSummaryApiErrors[selectedReservationKey]}
+                isAiCaseOpinionLoading={aiCaseOpinionLoadingId === selectedReservationKey}
                 isAiSummaryApiLoading={aiCaseSummaryApiLoadingId === selectedReservationKey}
                 onFeatureClick={handleAiFeatureClick}
+                onCaseOpinionChange={(value) => updateAiCaseOpinionText(selectedReservationKey, value)}
                 onGenerateApiSummary={() => handleGenerateAiCaseSummaryWithApi(selectedReservationKey)}
                 onGenerateDocumentReadiness={() => handleGenerateAiDocumentReadiness(selectedReservationKey)}
                 onGenerateInsight={() => handleGenerateAiCaseInsight(selectedReservationKey)}
@@ -2619,27 +2782,35 @@ function AiCaseSummaryApiPanel({
 }
 
 function AiAssistantSection({
+  aiCaseOpinion,
+  aiCaseOpinionError,
   aiDocumentReadiness,
   aiEvidenceInsight,
   aiInsight,
   aiOpinionDraft,
   aiSummary,
   aiSummaryApiError,
+  isAiCaseOpinionLoading,
   isAiSummaryApiLoading,
+  onCaseOpinionChange,
   onFeatureClick,
   onGenerateApiSummary,
   onGenerateDocumentReadiness,
   onGenerateInsight,
   onGenerateSummary,
 }: {
+  aiCaseOpinion?: string;
+  aiCaseOpinionError?: string;
   aiDocumentReadiness?: AiDocumentReadiness;
   aiEvidenceInsight?: AiEvidenceInsight;
   aiInsight?: AiCaseInsight;
   aiOpinionDraft?: AiOpinionDraft;
   aiSummary?: string;
   aiSummaryApiError?: string;
+  isAiCaseOpinionLoading: boolean;
   isAiSummaryApiLoading: boolean;
-  onFeatureClick: (feature: "summary" | "evidence" | "readiness" | "draft") => void;
+  onCaseOpinionChange: (value: string) => void;
+  onFeatureClick: (feature: "summary" | "evidence" | "readiness" | "draft" | "caseOpinion") => void;
   onGenerateApiSummary: () => void;
   onGenerateDocumentReadiness: () => void;
   onGenerateInsight: () => void;
@@ -2668,6 +2839,11 @@ function AiAssistantSection({
     },
     {
       description: "사건 요약과 상담기록을 바탕으로 의견서 초안을 작성합니다.",
+      id: "caseOpinion" as const,
+      title: "AI 상담의견서 작성",
+    },
+    {
+      description: "기존 mock 규칙 기반으로 간단한 의견서 초안을 작성합니다.",
       id: "draft" as const,
       title: "AI 의견서 작성",
     },
@@ -2742,6 +2918,12 @@ function AiAssistantSection({
       {aiInsight ? <AiCaseInsightDashboard insight={aiInsight} /> : null}
       {aiEvidenceInsight ? <AiEvidenceInsightDashboard insight={aiEvidenceInsight} /> : null}
       {aiDocumentReadiness ? <AiDocumentReadinessDashboard readiness={aiDocumentReadiness} /> : null}
+      <AiCaseOpinionEditor
+        error={aiCaseOpinionError}
+        isLoading={isAiCaseOpinionLoading}
+        onChange={onCaseOpinionChange}
+        value={aiCaseOpinion}
+      />
       {aiOpinionDraft ? <AiOpinionDraftDashboard draft={aiOpinionDraft} /> : null}
       {aiSummary ? (
         <div className="mt-4 rounded-xl border border-navy/15 bg-navy/5 p-4">
@@ -2752,6 +2934,78 @@ function AiAssistantSection({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function AiCaseOpinionEditor({
+  error,
+  isLoading,
+  onChange,
+  value,
+}: {
+  error?: string;
+  isLoading: boolean;
+  onChange: (value: string) => void;
+  value?: string;
+}) {
+  function printOpinion() {
+    const printStyle = document.createElement("style");
+    printStyle.setAttribute("data-ai-case-opinion-print", "true");
+    printStyle.textContent = `
+      @media print {
+        body * { visibility: hidden !important; }
+        #ai-case-opinion-print-area, #ai-case-opinion-print-area * { visibility: visible !important; }
+        #ai-case-opinion-print-area { position: absolute; inset: 0; width: 100%; padding: 24px; background: white; }
+      }
+    `;
+    document.head.appendChild(printStyle);
+    window.print();
+    window.setTimeout(() => printStyle.remove(), 500);
+  }
+
+  if (!isLoading && !error && !value) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 print:border-0 print:bg-white print:p-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between print:hidden">
+        <div>
+          <p className="text-sm font-black text-slate-900">AI 상담의견서 결과</p>
+          <p className="mt-1 text-xs font-semibold text-slate-600">
+            생성된 초안은 관리자가 직접 수정할 수 있으며, 현재 내용은 localStorage 기반 ai_outputs 구조로 저장 준비됩니다.
+          </p>
+        </div>
+        <button
+          className="w-fit rounded-full border border-emerald-300 bg-white px-4 py-2 text-xs font-black text-emerald-700 transition hover:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!value}
+          onClick={printOpinion}
+          type="button"
+        >
+          PDF 출력
+        </button>
+      </div>
+      {isLoading ? (
+        <p className="mt-3 text-sm font-bold text-emerald-700 print:hidden">AI 상담의견서 초안을 생성하고 있습니다.</p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 print:hidden">
+          {error}
+        </p>
+      ) : null}
+      {value ? (
+        <div className="mt-4" id="ai-case-opinion-print-area">
+          <textarea
+            className="min-h-[520px] w-full rounded-xl border border-emerald-200 bg-white p-4 font-sans text-sm leading-7 text-slate-800 shadow-inner outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 print:hidden"
+            onChange={(event) => onChange(event.target.value)}
+            value={value}
+          />
+          <div className="hidden whitespace-pre-wrap break-words font-sans text-sm leading-7 text-slate-900 print:block">
+            {value}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -4838,6 +5092,50 @@ function buildAiOpinionDraft(
   };
 }
 
+function createAiOutputId(caseId: string, outputType: AiOutputType) {
+  const safeCaseId = caseId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || "case";
+  return `${safeCaseId}-${outputType}-${Date.now()}`;
+}
+
+function buildCaseOpinionInputSnapshot(
+  caseItem: Reservation,
+  logs: ReservationConsultLog[] = [],
+  events: ReservationEvent[] = [],
+  evidenceFiles: ReservationFile[] = [],
+  existingCaseSummary = "",
+): CaseOpinionInputSnapshot {
+  const privateValues = [caseItem.name, caseItem.phone, caseItem.email].filter(hasText) as string[];
+  const checklistItems = getCaseChecklistItems(caseItem, logs, events);
+  const consultationContent = createPrivateSafeCaseText(
+    [caseItem.summary, caseItem.consultation_log, caseItem.diagnosis_summary, ...logs.map((log) => log.content)],
+    privateValues,
+  );
+  const caseContent = createPrivateSafeCaseText(
+    [caseItem.content, caseItem.admin_memo],
+    privateValues,
+  );
+  const submittedDocumentStatus = createPrivateSafeCaseText([asText(caseItem.submitted_documents)], privateValues);
+
+  return {
+    caseContent,
+    caseStatus: removePrivateIdentifiers(caseItem.case_status || "", privateValues),
+    checklistStatus: {
+      completed: checklistItems.filter((item) => item.completed).map((item) => removePrivateIdentifiers(item.label, privateValues)),
+      pending: checklistItems.filter((item) => !item.completed).map((item) => removePrivateIdentifiers(item.label, privateValues)),
+    },
+    consultationContent,
+    consultationType: removePrivateIdentifiers(caseItem.consultation_type ?? caseItem.consultationType ?? "", privateValues),
+    evidenceTypes: Array.from(new Set(evidenceFiles.map(getEvidenceTypeLabel))).map((item) =>
+      removePrivateIdentifiers(item, privateValues),
+    ),
+    existingCaseSummary: createPrivateSafeCaseText([existingCaseSummary], privateValues),
+    hasEvidence: evidenceFiles.length > 0,
+    hasSubmittedDocuments: hasText(submittedDocumentStatus),
+    studentRole: getGeneralizedPartyLabel(caseItem.student_type ?? caseItem.studentRole),
+    submittedDocumentStatus,
+  };
+}
+
 function buildAiCaseSummary(
   caseItem: Reservation,
   logs: ReservationConsultLog[] = [],
@@ -4968,6 +5266,11 @@ function removePrivateIdentifiers(text: string, privateValues: string[]) {
   }, text)
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "")
     .replace(/\b\d{2,3}-?\d{3,4}-?\d{4}\b/g, "")
+    .replace(/\b\d{6}-?[1-4]\d{6}\b/g, "")
+    .replace(/[가-힣A-Za-z0-9]+(?:초등학교|중학교|고등학교|초|중|고|대학교|학교)/g, "학교")
+    .replace(/\b\d{1,2}\s*학년\s*\d{1,2}\s*반\b/g, "학급")
+    .replace(/[가-힣A-Za-z]+(?:동|로|길)\s*\d+(?:-\d+)?/g, "주소")
+    .replace(/(?:피해|가해|관련)?학생\s*[가-힣]{2,4}(?=\s|은|는|이|가|을|를|과|와|,|\.|$)/g, "학생")
     .trim();
 }
 
