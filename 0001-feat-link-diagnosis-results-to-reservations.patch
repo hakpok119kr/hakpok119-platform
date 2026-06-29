@@ -1,0 +1,392 @@
+From 6c7dcf933fdf82819f754a68aeb36db512574834 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sat, 27 Jun 2026 11:48:00 +0900
+Subject: [PATCH] feat: link diagnosis results to reservations
+
+---
+ app/diagnosis/result/[id]/page.tsx |   2 +-
+ app/reservation/page.tsx           | 340 ++++++++++++++++++++++++++++-
+ 2 files changed, 329 insertions(+), 13 deletions(-)
+
+diff --git a/app/diagnosis/result/[id]/page.tsx b/app/diagnosis/result/[id]/page.tsx
+index 3bc1d9e..0f8974a 100644
+--- a/app/diagnosis/result/[id]/page.tsx
++++ b/app/diagnosis/result/[id]/page.tsx
+@@ -1104,7 +1104,7 @@ export default function DiagnosisResultPage({ params }: { params: { id: string }
+         <Link href="/diagnosis" className="btn-outline">
+           다시 진단하기
+         </Link>
+-        <Link href="/reservation" className="btn-primary">
++        <Link href={`/reservation?diagnosisResultId=${encodeURIComponent(params.id)}`} className="btn-primary">
+           상담예약
+         </Link>
+       </div>
+diff --git a/app/reservation/page.tsx b/app/reservation/page.tsx
+index d31d8e6..cb7044a 100644
+--- a/app/reservation/page.tsx
++++ b/app/reservation/page.tsx
+@@ -1,33 +1,349 @@
++'use client';
++
++import { FormEvent, useEffect, useMemo, useState } from 'react';
++import { useRouter } from 'next/navigation';
++import { supabase } from '@/lib/supabase/client';
++
++const STORAGE_KEY = 'hakpok119-reservations';
++const DIAGNOSIS_STORAGE_KEY_PREFIX = 'diagnosis-result';
++
+ const products = [
+   ['기본상담', '20분 + 무료 10분', '총 30분', '33,000원'],
+   ['사건검토 상담', '30분 + 무료 10분', '총 40분', '55,000원'],
+   ['자료검토 상담', '60분 + 무료 10분', '총 70분', '99,000원'],
+ ];
+ 
++type DiagnosisPayload = Record<string, unknown>;
++
++type LinkedDiagnosis = {
++  diagnosis_type: string | null;
++  diagnosis_result_id: string;
++  diagnosis_summary: string;
++  diagnosis_payload: DiagnosisPayload;
++};
++
++type Reservation = {
++  id?: string;
++  created_at?: string;
++  name?: string;
++  phone?: string;
++  email?: string;
++  product?: string;
++  preferred_date?: string;
++  preferred_time?: string;
++  content?: string;
++  reservation_status?: string;
++  diagnosis_type?: string | null;
++  diagnosis_result_id?: string | null;
++  diagnosis_summary?: string | null;
++  diagnosis_payload?: DiagnosisPayload | null;
++};
++
++function isRecord(value: unknown): value is DiagnosisPayload {
++  return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++
++function toText(value: unknown) {
++  if (typeof value === 'string') {
++    return value.trim();
++  }
++
++  if (typeof value === 'number' || typeof value === 'boolean') {
++    return String(value);
++  }
++
++  return '';
++}
++
++function compactText(value: unknown, maxLength = 80) {
++  const text = toText(value).replace(/\s+/g, ' ');
++  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
++}
++
++function firstText(...values: unknown[]) {
++  for (const value of values) {
++    const text = compactText(value);
++    if (text) {
++      return text;
++    }
++  }
++
++  return '';
++}
++
++function textList(value: unknown, maxItems = 3) {
++  if (Array.isArray(value)) {
++    return value.map((item) => compactText(item, 36)).filter(Boolean).slice(0, maxItems);
++  }
++
++  const text = toText(value);
++  if (!text) {
++    return [];
++  }
++
++  return text
++    .split(/\n|,|ㆍ|·/)
++    .map((item) => compactText(item, 36))
++    .filter(Boolean)
++    .slice(0, maxItems);
++}
++
++function createDiagnosisSummary(payload: DiagnosisPayload) {
++  const sections = isRecord(payload.resultSections) ? payload.resultSections : {};
++  const inputDetails = isRecord(sections.inputDetails) ? sections.inputDetails : {};
++  const diagnosisType = firstText(
++    sections.diagnosisType,
++    payload.type,
++    payload.diagnosisCode,
++    payload.resultType,
++  );
++  const result = firstText(
++    sections.diagnosisResult,
++    sections.expectedMeasure,
++    sections.riskLevel,
++    sections.appealLevel,
++    sections.possibility,
++    sections.recordRiskLevel,
++    sections.admissionImpactLevel,
++    payload.result,
++  );
++  const coreItems = [
++    ...textList(sections.reasoningPoints),
++    ...textList(sections.riskFactors),
++    ...textList(sections.admissionImpactFactors),
++    compactText(inputDetails.persistence),
++    compactText(inputDetails.intentionality),
++    compactText(inputDetails.severity),
++    compactText(inputDetails.factSummary),
++  ].filter(Boolean);
++
++  return [
++    `진단유형: ${diagnosisType || '무료진단'}`,
++    `결과: ${result || '진단 결과 확인'}`,
++    `핵심요약: ${coreItems.length ? coreItems.slice(0, 3).join(', ') : '입력 내용 및 판정 결과 확인'}`,
++  ].join('\n');
++}
++
++function readLinkedDiagnosis(resultId: string): LinkedDiagnosis | null {
++  if (typeof window === 'undefined') {
++    return null;
++  }
++
++  try {
++    const saved = window.sessionStorage.getItem(`${DIAGNOSIS_STORAGE_KEY_PREFIX}:${resultId}`);
++    if (!saved) {
++      return null;
++    }
++
++    const parsed = JSON.parse(saved) as unknown;
++    if (!isRecord(parsed)) {
++      return null;
++    }
++
++    const sections = isRecord(parsed.resultSections) ? parsed.resultSections : {};
++    const diagnosisType = firstText(
++      sections.diagnosisType,
++      parsed.type,
++      parsed.diagnosisCode,
++      parsed.resultType,
++    );
++
++    return {
++      diagnosis_type: diagnosisType || null,
++      diagnosis_result_id: resultId,
++      diagnosis_summary: createDiagnosisSummary(parsed),
++      diagnosis_payload: parsed,
++    };
++  } catch {
++    return null;
++  }
++}
++
++function readLocalReservations() {
++  if (typeof window === 'undefined') {
++    return [];
++  }
++
++  try {
++    const saved = window.localStorage.getItem(STORAGE_KEY);
++    return saved ? (JSON.parse(saved) as Reservation[]) : [];
++  } catch {
++    return [];
++  }
++}
++
++function writeLocalReservation(reservation: Reservation) {
++  if (typeof window === 'undefined') {
++    return;
++  }
++
++  const reservations = readLocalReservations();
++  window.localStorage.setItem(STORAGE_KEY, JSON.stringify([reservation, ...reservations]));
++}
++
+ export default function ReservationPage() {
++  const router = useRouter();
++  const [selectedProduct, setSelectedProduct] = useState(products[0][0]);
++  const [preferredDate, setPreferredDate] = useState('');
++  const [preferredTime, setPreferredTime] = useState('');
++  const [name, setName] = useState('');
++  const [phone, setPhone] = useState('');
++  const [email, setEmail] = useState('');
++  const [content, setContent] = useState('');
++  const [linkedDiagnosis, setLinkedDiagnosis] = useState<LinkedDiagnosis | null>(null);
++  const [isSubmitting, setIsSubmitting] = useState(false);
++  const [message, setMessage] = useState('');
++
++  const linkedDiagnosisDisplay = useMemo(
++    () => linkedDiagnosis?.diagnosis_summary.split('\n').join(' / ') ?? '',
++    [linkedDiagnosis],
++  );
++
++  useEffect(() => {
++    const resultId = new URLSearchParams(window.location.search).get('diagnosisResultId');
++    if (!resultId) {
++      return;
++    }
++
++    setLinkedDiagnosis(readLinkedDiagnosis(resultId));
++  }, []);
++
++  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++    setMessage('');
++
++    if (!preferredDate.trim() || !name.trim() || !phone.trim()) {
++      setMessage('희망일시, 입금자명, 연락처를 입력해 주세요.');
++      return;
++    }
++
++    const payload: Reservation = {
++      product: selectedProduct,
++      preferred_date: preferredDate,
++      preferred_time: preferredTime,
++      name,
++      phone,
++      email,
++      content,
++      reservation_status: '접수',
++      diagnosis_type: linkedDiagnosis?.diagnosis_type ?? null,
++      diagnosis_result_id: linkedDiagnosis?.diagnosis_result_id ?? null,
++      diagnosis_summary: linkedDiagnosis?.diagnosis_summary ?? null,
++      diagnosis_payload: linkedDiagnosis?.diagnosis_payload ?? null,
++    };
++
++    setIsSubmitting(true);
++
++    const { data, error } = await supabase.from('reservations').insert(payload).select('*').single();
++    const backupReservation = {
++      ...payload,
++      ...(data && isRecord(data) ? data : {}),
++      created_at: toText((data as Reservation | null)?.created_at) || new Date().toISOString(),
++    };
++
++    writeLocalReservation(backupReservation);
++
++    if (error) {
++      setMessage('Supabase 저장에 실패했습니다. localStorage 백업에는 저장되었습니다.');
++      setIsSubmitting(false);
++      return;
++    }
++
++    router.push('/reservation/success');
++  }
++
+   return (
+     <div>
+       <h1 className="mb-6 text-3xl font-black">상담예약</h1>
++
++      {linkedDiagnosis ? (
++        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-slate-800">
++          <p className="font-bold">무료진단 결과가 상담예약과 함께 전달됩니다.</p>
++          <dl className="mt-3 grid gap-2 md:grid-cols-3">
++            <div>
++              <dt className="font-semibold text-slate-600">진단유형</dt>
++              <dd>{linkedDiagnosis.diagnosis_type ?? '무료진단'}</dd>
++            </div>
++            <div>
++              <dt className="font-semibold text-slate-600">진단요약</dt>
++              <dd>{linkedDiagnosisDisplay}</dd>
++            </div>
++            <div>
++              <dt className="font-semibold text-slate-600">결과 ID</dt>
++              <dd>{linkedDiagnosis.diagnosis_result_id}</dd>
++            </div>
++          </dl>
++        </div>
++      ) : null}
++
+       <div className="grid gap-4 md:grid-cols-3">
+-        {products.map(([name, time, total, price]) => (
+-          <div key={name} className="card">
+-            <h2 className="text-xl font-bold">{name}</h2>
++        {products.map(([productName, time, total, price]) => (
++          <button
++            key={productName}
++            className={`card text-left transition ${
++              selectedProduct === productName ? 'border-navy ring-2 ring-navy' : ''
++            }`}
++            onClick={() => setSelectedProduct(productName)}
++            type="button"
++          >
++            <h2 className="text-xl font-bold">{productName}</h2>
+             <p className="mt-3">{time}</p>
+             <p className="font-bold text-navy">{total}</p>
+             <p className="mt-3 text-2xl font-black">{price}</p>
+-          </div>
++          </button>
+         ))}
+       </div>
+-      <div className="card mt-6">
+-        <p className="mb-4 text-sm text-slate-600">상담예약 신청 후 안내된 계좌로 입금해 주시면, 관리자가 입금 확인 후 예약을 확정합니다.</p>
++
++      <form className="card mt-6" onSubmit={handleSubmit}>
++        <p className="mb-4 text-sm text-slate-600">
++          상담예약 신청 후 안내된 계좌로 입금해 주시면 관리자가 입금 확인 후 예약을 확정합니다.
++        </p>
+         <div className="grid gap-3 md:grid-cols-2">
+-          <input className="rounded-xl border p-3" placeholder="희망일시" />
+-          <input className="rounded-xl border p-3" placeholder="입금자명" />
+-          <input className="rounded-xl border p-3" placeholder="연락처" />
+-          <textarea className="rounded-xl border p-3 md:col-span-2" placeholder="상담내용" />
++          <input
++            className="rounded-xl border p-3"
++            onChange={(event) => setPreferredDate(event.target.value)}
++            placeholder="희망일자"
++            type="date"
++            value={preferredDate}
++          />
++          <input
++            className="rounded-xl border p-3"
++            onChange={(event) => setPreferredTime(event.target.value)}
++            placeholder="희망시간"
++            type="time"
++            value={preferredTime}
++          />
++          <input
++            className="rounded-xl border p-3"
++            onChange={(event) => setName(event.target.value)}
++            placeholder="입금자명"
++            value={name}
++          />
++          <input
++            className="rounded-xl border p-3"
++            onChange={(event) => setPhone(event.target.value)}
++            placeholder="연락처"
++            value={phone}
++          />
++          <input
++            className="rounded-xl border p-3 md:col-span-2"
++            onChange={(event) => setEmail(event.target.value)}
++            placeholder="이메일"
++            type="email"
++            value={email}
++          />
++          <textarea
++            className="rounded-xl border p-3 md:col-span-2"
++            onChange={(event) => setContent(event.target.value)}
++            placeholder="상담내용"
++            value={content}
++          />
+         </div>
+-        <a href="/reservation/success" className="btn-primary mt-5">예약신청</a>
+-      </div>
++        {message ? <p className="mt-4 text-sm font-semibold text-red-600">{message}</p> : null}
++        <button className="btn-primary mt-5" disabled={isSubmitting} type="submit">
++          {isSubmitting ? '예약신청 중' : '예약신청'}
++        </button>
++      </form>
+     </div>
+   );
+ }
+-- 
+2.53.0.windows.3
+
