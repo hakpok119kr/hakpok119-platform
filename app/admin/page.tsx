@@ -220,6 +220,17 @@ type AiCaseInsight = {
   };
 };
 
+type AiEvidenceInsight = {
+  evidenceScore: number;
+  evidenceGrade: "A" | "B" | "C" | "D";
+  registeredEvidenceTypes: string[];
+  missingEvidence: string[];
+  recommendedEvidence: string[];
+  usageDirection: string[];
+  cautions: string[];
+  analyzedAt: string;
+};
+
 type DetailSectionKey =
   | "reservationInfo"
   | "diagnosis"
@@ -394,6 +405,7 @@ export default function AdminPage() {
   const [evidenceInputVersion, setEvidenceInputVersion] = useState(0);
   const [aiCaseSummaries, setAiCaseSummaries] = useState<Record<string, string>>({});
   const [aiCaseInsights, setAiCaseInsights] = useState<Record<string, AiCaseInsight>>({});
+  const [aiEvidenceInsights, setAiEvidenceInsights] = useState<Record<string, AiEvidenceInsight>>({});
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     events: [],
     consultLogs: [],
@@ -802,7 +814,11 @@ export default function AdminPage() {
   }
 
   function handleAiFeatureClick(feature: "summary" | "evidence" | "draft") {
-    console.log("AI placeholder clicked:", feature);
+    if (feature === "evidence") {
+      handleGenerateAiEvidenceInsight(selectedReservationKey);
+      return;
+    }
+
     const notice = "Ver.2.0에서 제공 예정인 기능입니다.";
     setMessage(notice);
     window.alert(notice);
@@ -848,6 +864,26 @@ export default function AdminPage() {
       [caseId]: insight,
     }));
     setMessage("AI 사건분석 대시보드가 생성되었습니다.");
+  }
+
+  function handleGenerateAiEvidenceInsight(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI 증거분석을 생성할 사건을 찾을 수 없습니다.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const insight = buildAiEvidenceInsight(reservation, logs, files);
+
+    setAiEvidenceInsights((current) => ({
+      ...current,
+      [caseId]: insight,
+    }));
+    setMessage("AI 증거분석 결과가 생성되었습니다.");
   }
 
   function updateSelectedEvidenceFile(reservation: Reservation, file?: File) {
@@ -1852,6 +1888,7 @@ export default function AdminPage() {
             <div>
               <CaseSummaryPanel events={selectedEvents} reservation={selectedReservation} />
               <AiAssistantSection
+                aiEvidenceInsight={aiEvidenceInsights[selectedReservationKey]}
                 aiInsight={aiCaseInsights[selectedReservationKey]}
                 aiSummary={aiCaseSummaries[selectedReservationKey]}
                 onFeatureClick={handleAiFeatureClick}
@@ -2355,12 +2392,14 @@ function CaseSummaryPanel({ events, reservation }: { events: ReservationEvent[];
 }
 
 function AiAssistantSection({
+  aiEvidenceInsight,
   aiInsight,
   aiSummary,
   onFeatureClick,
   onGenerateInsight,
   onGenerateSummary,
 }: {
+  aiEvidenceInsight?: AiEvidenceInsight;
   aiInsight?: AiCaseInsight;
   aiSummary?: string;
   onFeatureClick: (feature: "summary" | "evidence" | "draft") => void;
@@ -2424,6 +2463,7 @@ function AiAssistantSection({
         ))}
       </div>
       {aiInsight ? <AiCaseInsightDashboard insight={aiInsight} /> : null}
+      {aiEvidenceInsight ? <AiEvidenceInsightDashboard insight={aiEvidenceInsight} /> : null}
       {aiSummary ? (
         <div className="mt-4 rounded-xl border border-navy/15 bg-navy/5 p-4">
           <p className="text-sm font-black text-slate-900">AI 사건요약 결과</p>
@@ -2579,6 +2619,55 @@ function AiInsightReasonDetails({ insight }: { insight: AiCaseInsight }) {
         </div>
       </div>
     </details>
+  );
+}
+
+function AiEvidenceInsightDashboard({ insight }: { insight: AiEvidenceInsight }) {
+  const gradeBadgeClass =
+    insight.evidenceGrade === "A"
+      ? "border-green-200 bg-green-50 text-green-700"
+      : insight.evidenceGrade === "B"
+        ? "border-blue-200 bg-blue-50 text-blue-700"
+        : insight.evidenceGrade === "C"
+          ? "border-yellow-200 bg-yellow-50 text-yellow-700"
+          : "border-red-200 bg-red-50 text-red-700";
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-sm font-black text-slate-900">🧾 AI 증거분석</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">등록된 증거자료 기준 mock 분석 결과입니다.</p>
+          {insight.analyzedAt ? (
+            <p className="mt-1 text-xs font-bold text-slate-500">최종 분석시간: {insight.analyzedAt}</p>
+          ) : null}
+        </div>
+        <span className={`w-fit rounded-full border px-3 py-1 text-xs font-black ${gradeBadgeClass}`}>
+          증거등급 {insight.evidenceGrade}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-[220px_1fr]">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <p className="text-xs font-black text-slate-500">증거점수</p>
+          <p className="mt-2 text-3xl font-black text-navy">{insight.evidenceScore}점</p>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
+            <div className="h-full rounded-full bg-navy" style={{ width: `${insight.evidenceScore}%` }} />
+          </div>
+        </div>
+        <AiInsightList items={insight.registeredEvidenceTypes} title="등록 증거유형" />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <AiInsightList items={insight.missingEvidence} title="부족 증거" />
+        <AiInsightList items={insight.recommendedEvidence} title="추가 확보 권장자료" />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <AiInsightList items={insight.usageDirection} title="증거 활용 방향" />
+        <AiInsightList items={insight.cautions} title="주의사항" />
+      </div>
+    </div>
   );
 }
 
@@ -4012,6 +4101,72 @@ function buildAiCaseInsight(
   };
 }
 
+function buildAiEvidenceInsight(
+  caseItem: Reservation,
+  logs: ReservationConsultLog[] = [],
+  evidenceFiles: ReservationFile[] = [],
+): AiEvidenceInsight {
+  const registeredEvidenceTypes = Array.from(new Set(evidenceFiles.map(getEvidenceTypeLabel)));
+  const hasConsultation = logs.length > 0 || hasText(caseItem.consultation_log);
+  const hasAdminMemo = hasText(caseItem.admin_memo);
+  const hasSubmittedDocuments = hasText(asText(caseItem.submitted_documents));
+  const hasVideo = registeredEvidenceTypes.some((type) => ["CCTV/영상", "녹음/음성"].includes(type));
+  const hasStatement = registeredEvidenceTypes.includes("진술서/문서");
+  const hasImage = registeredEvidenceTypes.includes("사진/이미지");
+  const hasSchoolDocument = hasSubmittedDocuments || registeredEvidenceTypes.includes("학교자료/공문");
+  const evidenceScore = clampScore(
+    Math.min(evidenceFiles.length * 18, 54) +
+      (hasVideo ? 14 : 0) +
+      (hasStatement ? 12 : 0) +
+      (hasImage ? 8 : 0) +
+      (hasSchoolDocument ? 8 : 0) +
+      (hasConsultation ? 8 : 0) +
+      (hasAdminMemo ? 6 : 0),
+  );
+  const evidenceGrade = getEvidenceGrade(evidenceScore);
+  const missingEvidence = [
+    !hasVideo ? "CCTV 또는 녹음 등 객관자료" : "",
+    !hasStatement ? "학생 진술서" : "",
+    "목격자 진술 또는 연락처",
+    !hasSchoolDocument ? "학교자료 및 학폭위 관련 문서" : "",
+    !hasConsultation ? "상담기록과 사실관계 정리" : "",
+  ].filter(hasText);
+  const recommendedEvidence = [
+    !hasVideo ? "CCTV 원본 또는 캡처본 확보" : "",
+    !hasStatement ? "피해학생·관련학생 진술서 확보" : "",
+    "목격자 진술서 확보",
+    !hasSchoolDocument ? "학교 조사자료, 통지서, 회의자료 확보" : "",
+    !hasImage ? "상처, 훼손물, 대화 화면 등 사진자료 확보" : "",
+  ].filter(hasText);
+  const usageDirection = [
+    hasVideo ? "영상·음성자료는 시간순 사실관계 확인에 우선 활용합니다." : "객관자료가 확보되기 전까지 진술 간 일치 여부를 먼저 정리합니다.",
+    hasStatement ? "진술서는 행위, 일시, 장소, 목격자를 기준으로 쟁점을 분리합니다." : "진술서 확보 후 의견서의 사실관계 부분에 반영합니다.",
+    hasSchoolDocument ? "학교자료는 절차 진행상황과 처분사유 검토에 활용합니다." : "학교자료 확보 후 제출기한과 절차상 쟁점을 확인합니다.",
+  ];
+
+  return {
+    analyzedAt: new Date().toLocaleString("ko-KR", {
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }),
+    cautions: [
+      "증거자료의 원본성, 촬영일시, 제출 가능 여부를 확인하십시오.",
+      "현재 자료만으로 사실관계를 단정하지 말고 상담기록과 학교자료를 함께 검토하십시오.",
+    ],
+    evidenceGrade,
+    evidenceScore,
+    missingEvidence: missingEvidence.length > 0 ? missingEvidence : ["핵심 증거자료는 비교적 충실하게 등록되었습니다."],
+    recommendedEvidence:
+      recommendedEvidence.length > 0 ? recommendedEvidence : ["등록된 증거의 원본성, 제출기한, 개인정보 포함 여부를 최종 점검하십시오."],
+    registeredEvidenceTypes:
+      registeredEvidenceTypes.length > 0 ? registeredEvidenceTypes : ["등록된 증거자료 없음"],
+    usageDirection,
+  };
+}
+
 function buildAiCaseSummary(
   caseItem: Reservation,
   logs: ReservationConsultLog[] = [],
@@ -4125,6 +4280,50 @@ function getEvidenceSufficiency(evidenceCount: number, hasConsultation: boolean,
   const baseScore = evidenceCount <= 0 ? 20 : evidenceCount === 1 ? 40 : evidenceCount === 2 ? 60 : 80;
   const adjustedScore = baseScore + (hasConsultation ? 10 : 0) + (hasAdminMemo ? 10 : 0);
   return clampScore(adjustedScore);
+}
+
+function getEvidenceGrade(score: number): AiEvidenceInsight["evidenceGrade"] {
+  if (score >= 85) {
+    return "A";
+  }
+
+  if (score >= 70) {
+    return "B";
+  }
+
+  if (score >= 50) {
+    return "C";
+  }
+
+  return "D";
+}
+
+function getEvidenceTypeLabel(file: ReservationFile) {
+  const fileName = file.file_name.toLowerCase();
+  const mimeType = file.mime_type?.toLowerCase() ?? "";
+  const extension = fileName.split(".").pop() ?? "";
+
+  if (mimeType.startsWith("video/") || ["mp4", "mov", "avi", "webm"].includes(extension) || fileName.includes("cctv")) {
+    return "CCTV/영상";
+  }
+
+  if (mimeType.startsWith("audio/") || ["mp3", "wav", "m4a"].includes(extension) || fileName.includes("녹음")) {
+    return "녹음/음성";
+  }
+
+  if (mimeType.startsWith("image/") || ["jpg", "jpeg", "png", "webp"].includes(extension)) {
+    return "사진/이미지";
+  }
+
+  if (fileName.includes("학교") || fileName.includes("통지") || fileName.includes("회의") || fileName.includes("학폭")) {
+    return "학교자료/공문";
+  }
+
+  if (["pdf", "doc", "docx", "hwp"].includes(extension)) {
+    return "진술서/문서";
+  }
+
+  return "기타자료";
 }
 
 function getAiInsightConfidence({
