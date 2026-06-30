@@ -264,6 +264,7 @@ type AiOutputType =
   | "case_summary"
   | "case_opinion"
   | "case_analysis"
+  | "case_strategy"
   | "evidence_analysis"
   | "assistant_case_summary";
 
@@ -272,8 +273,22 @@ const aiOutputHistoryTypeOptions: Array<"all" | AiOutputType> = [
   "case_summary",
   "case_analysis",
   "case_opinion",
+  "case_strategy",
   "assistant_case_summary",
 ];
+
+const aiOutputTypeLabels: Record<AiOutputType, string> = {
+  assistant_case_summary: "AI \uC5C5\uBB34\uB3C4\uC6B0\uBBF8 \uC0AC\uAC74\uC694\uC57D",
+  case_analysis: "AI \uC0AC\uAC74\uBD84\uC11D",
+  case_opinion: "AI \uC0C1\uB2F4\uC758\uACAC\uC11C",
+  case_strategy: "AI \uB300\uC751\uC804\uB7B5",
+  case_summary: "AI \uC0AC\uAC74\uC694\uC57D",
+  evidence_analysis: "AI \uC99D\uAC70\uBD84\uC11D",
+};
+
+function getAiOutputTypeLabel(type: AiOutputType) {
+  return aiOutputTypeLabels[type] ?? type;
+}
 
 type AiOutputRecord = {
   id: string;
@@ -512,6 +527,9 @@ export default function AdminPage() {
   const [aiCaseAnalysis, setAiCaseAnalysis] = useState<Record<string, string>>({});
   const [isGeneratingCaseAnalysis, setIsGeneratingCaseAnalysis] = useState<string | null>(null);
   const [caseAnalysisError, setCaseAnalysisError] = useState<Record<string, string>>({});
+  const [aiCaseStrategies, setAiCaseStrategies] = useState<Record<string, string>>({});
+  const [aiCaseStrategyLoadingId, setAiCaseStrategyLoadingId] = useState<string | null>(null);
+  const [aiCaseStrategyErrors, setAiCaseStrategyErrors] = useState<Record<string, string>>({});
   const [aiOutputs, setAiOutputs] = useState<Record<string, AiOutputRecord>>({});
   const [aiOutputHistoryByReservation, setAiOutputHistoryByReservation] = useState<Record<string, AiOutputHistory[]>>({});
   const [loadingAiOutputHistoryId, setLoadingAiOutputHistoryId] = useState<string | null>(null);
@@ -941,7 +959,7 @@ export default function AdminPage() {
     }
   }
 
-  function handleAiFeatureClick(feature: "summary" | "caseAnalysis" | "evidence" | "readiness" | "draft" | "caseOpinion") {
+  function handleAiFeatureClick(feature: "summary" | "caseAnalysis" | "evidence" | "readiness" | "draft" | "caseOpinion" | "caseStrategy") {
     if (feature === "caseAnalysis") {
       void handleGenerateAiCaseAnalysisWithApi(selectedReservationKey);
       return;
@@ -964,6 +982,11 @@ export default function AdminPage() {
 
     if (feature === "caseOpinion") {
       void handleGenerateAiCaseOpinionWithApi(selectedReservationKey);
+      return;
+    }
+
+    if (feature === "caseStrategy") {
+      void handleGenerateAiCaseStrategyWithApi(selectedReservationKey);
       return;
     }
 
@@ -1420,6 +1443,117 @@ export default function AdminPage() {
       setCaseAnalysisError((current) => ({ ...current, [caseId]: errorMessage }));
       setMessage(errorMessage);
       setIsGeneratingCaseAnalysis((current) => (current === caseId ? null : current));
+    }
+  }
+
+
+  async function handleGenerateAiCaseStrategyWithApi(caseId: string) {
+    const reservation = reservations.find((item) => getReservationKey(item) === caseId);
+
+    if (!reservation) {
+      setMessage("AI \uB300\uC751\uC804\uB7B5\uC744 \uC0DD\uC131\uD560 \uC0AC\uAC74\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.");
+      return;
+    }
+
+    const reservationId = reservation.id;
+    const logs = reservationId ? consultLogsByReservation[reservationId] ?? [] : [];
+    const events = reservationId ? eventsByReservation[reservationId] ?? [] : [];
+    const files = reservationId ? evidenceFilesByReservation[reservationId] ?? [] : [];
+    const existingCaseSummary = aiCaseSummaries[caseId] ?? buildAiCaseSummary(reservation, logs, events, files);
+    const privateValues = [reservation.name, reservation.phone, reservation.email].filter(hasText) as string[];
+    const consultationContent = createPrivateSafeCaseText(
+      [
+        reservation.consultation_log,
+        reservation.summary,
+        reservation.content,
+        reservation.diagnosis_summary,
+        ...logs.map((log) => log.content),
+        ...events.map((event) => [event.title, event.memo].filter(hasText).join(" ")),
+      ],
+      privateValues,
+    );
+    const caseContent = createPrivateSafeCaseText(
+      [existingCaseSummary, aiCaseAnalysis[caseId], aiCaseOpinions[caseId], reservation.admin_memo],
+      privateValues,
+    );
+    const evidenceTypes = Array.from(new Set(files.map(getEvidenceTypeLabel)));
+    const inputSnapshot = {
+      caseStatus: removePrivateIdentifiers(reservation.case_status || "", privateValues),
+      caseContent,
+      consultationContent,
+      consultationType: removePrivateIdentifiers(
+        reservation.consultation_type ?? reservation.consultationType ?? "",
+        privateValues,
+      ),
+      evidenceTypes,
+      existingCaseAnalysis: createPrivateSafeCaseText([aiCaseAnalysis[caseId]], privateValues),
+      existingCaseOpinion: createPrivateSafeCaseText([aiCaseOpinions[caseId]], privateValues),
+      existingCaseSummary: createPrivateSafeCaseText([existingCaseSummary], privateValues),
+      hasEvidence: files.length > 0,
+      hasSubmittedDocuments: hasText(asText(reservation.submitted_documents)),
+      riskReference: createPrivateSafeCaseText(
+        [reservation.diagnosis_type, reservation.diagnosis_summary, reservation.admin_memo],
+        privateValues,
+      ),
+      studentRole: getGeneralizedPartyLabel(reservation.student_type ?? reservation.studentRole),
+      submittedDocumentStatus: createPrivateSafeCaseText([asText(reservation.submitted_documents)], privateValues),
+    };
+
+    setAiCaseStrategyLoadingId(caseId);
+    setAiCaseStrategyErrors((current) => {
+      const next = { ...current };
+      delete next[caseId];
+      return next;
+    });
+
+    try {
+      const response = await fetch("/api/ai/case-strategy", {
+        body: JSON.stringify(inputSnapshot),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        result?: string;
+        error?: string;
+        model?: string;
+        promptVersion?: string;
+      };
+
+      if (!data.ok || !data.result) {
+        const errorMessage = data.error ?? "AI \uB300\uC751\uC804\uB7B5 \uC0DD\uC131 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.";
+        setAiCaseStrategyErrors((current) => ({ ...current, [caseId]: errorMessage }));
+        setMessage(errorMessage);
+        setAiCaseStrategyLoadingId((current) => (current === caseId ? null : current));
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const outputRecord: AiOutputRecord = {
+        case_id: reservation.id || caseId,
+        created_at: now,
+        id: createAiOutputId(reservation.id || caseId, "case_strategy"),
+        input_snapshot: inputSnapshot,
+        model: data.model ?? "gpt-4o-mini",
+        output_text: data.result,
+        output_type: "case_strategy",
+        prompt_version: data.promptVersion ?? "case_strategy_v1",
+        updated_at: now,
+      };
+
+      setAiCaseStrategies((current) => ({
+        ...current,
+        [caseId]: data.result ?? "",
+      }));
+      await persistAiOutput(outputRecord, "AI \uB300\uC751\uC804\uB7B5");
+      setAiCaseStrategyLoadingId((current) => (current === caseId ? null : current));
+    } catch {
+      const errorMessage = "AI \uB300\uC751\uC804\uB7B5 \uC0DD\uC131 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.";
+      setAiCaseStrategyErrors((current) => ({ ...current, [caseId]: errorMessage }));
+      setMessage(errorMessage);
+      setAiCaseStrategyLoadingId((current) => (current === caseId ? null : current));
     }
   }
 
@@ -2537,14 +2671,18 @@ export default function AdminPage() {
                 aiCaseAnalysisError={caseAnalysisError[selectedReservationKey]}
                 aiCaseOpinion={aiCaseOpinions[selectedReservationKey]}
                 aiCaseOpinionError={aiCaseOpinionErrors[selectedReservationKey]}
+                aiCaseStrategy={aiCaseStrategies[selectedReservationKey]}
+                aiCaseStrategyError={aiCaseStrategyErrors[selectedReservationKey]}
                 aiSummary={aiCaseSummaries[selectedReservationKey]}
                 aiSummaryApiError={aiCaseSummaryApiErrors[selectedReservationKey]}
                 isAiCaseAnalysisLoading={isGeneratingCaseAnalysis === selectedReservationKey}
                 isAiCaseOpinionLoading={aiCaseOpinionLoadingId === selectedReservationKey}
+                isAiCaseStrategyLoading={aiCaseStrategyLoadingId === selectedReservationKey}
                 isAiSummaryApiLoading={aiCaseSummaryApiLoadingId === selectedReservationKey}
                 onFeatureClick={handleAiFeatureClick}
                 onCaseOpinionChange={(value) => updateAiCaseOpinionText(selectedReservationKey, value)}
                 onGenerateApiSummary={() => handleGenerateAiCaseSummaryWithApi(selectedReservationKey)}
+                onGenerateCaseStrategy={() => handleGenerateAiCaseStrategyWithApi(selectedReservationKey)}
                 onGenerateDocumentReadiness={() => handleGenerateAiDocumentReadiness(selectedReservationKey)}
                 onGenerateInsight={() => handleGenerateAiCaseInsight(selectedReservationKey)}
                 onGenerateSummary={() => handleGenerateAiCaseSummary(selectedReservationKey)}
@@ -3113,6 +3251,8 @@ function AiAssistantSection({
   aiCaseAnalysisError,
   aiCaseOpinion,
   aiCaseOpinionError,
+  aiCaseStrategy,
+  aiCaseStrategyError,
   aiDocumentReadiness,
   aiEvidenceInsight,
   aiInsight,
@@ -3121,10 +3261,12 @@ function AiAssistantSection({
   aiSummaryApiError,
   isAiCaseAnalysisLoading,
   isAiCaseOpinionLoading,
+  isAiCaseStrategyLoading,
   isAiSummaryApiLoading,
   onCaseOpinionChange,
   onFeatureClick,
   onGenerateApiSummary,
+  onGenerateCaseStrategy,
   onGenerateDocumentReadiness,
   onGenerateInsight,
   onGenerateSummary,
@@ -3133,6 +3275,8 @@ function AiAssistantSection({
   aiCaseAnalysisError?: string;
   aiCaseOpinion?: string;
   aiCaseOpinionError?: string;
+  aiCaseStrategy?: string;
+  aiCaseStrategyError?: string;
   aiDocumentReadiness?: AiDocumentReadiness;
   aiEvidenceInsight?: AiEvidenceInsight;
   aiInsight?: AiCaseInsight;
@@ -3141,10 +3285,12 @@ function AiAssistantSection({
   aiSummaryApiError?: string;
   isAiCaseAnalysisLoading: boolean;
   isAiCaseOpinionLoading: boolean;
+  isAiCaseStrategyLoading: boolean;
   isAiSummaryApiLoading: boolean;
   onCaseOpinionChange: (value: string) => void;
   onFeatureClick: (feature: "summary" | "caseAnalysis" | "evidence" | "readiness" | "draft" | "caseOpinion") => void;
   onGenerateApiSummary: () => void;
+  onGenerateCaseStrategy: () => void;
   onGenerateDocumentReadiness: () => void;
   onGenerateInsight: () => void;
   onGenerateSummary: () => void;
@@ -3164,6 +3310,11 @@ function AiAssistantSection({
       description: "사건 요약과 상담기록을 바탕으로 의견서 초안을 작성합니다.",
       id: "caseOpinion" as const,
       title: "AI 의견서",
+    },
+    {
+      description: "\uC0AC\uAC74 \uC7C1\uC810, \uBCF4\uD638\uC790 \uD589\uB3D9\uC694\uB839, \uC81C\uCD9C\uC790\uB8CC, \uD5A5\uD6C4 \uC77C\uC815\uAE4C\uC9C0 \uB300\uC751\uC804\uB7B5\uC744 \uAD6C\uC870\uD654\uD569\uB2C8\uB2E4.",
+      id: "caseStrategy" as const,
+      title: "AI \uB300\uC751\uC804\uB7B5 \uC0DD\uC131",
     },
     {
       description: "사건 준비도, 증거충족도, 위험도와 우선업무를 규칙 기반으로 점검합니다.",
@@ -3214,6 +3365,11 @@ function AiAssistantSection({
                 return;
               }
 
+              if (feature.id === "caseStrategy") {
+                onGenerateCaseStrategy();
+                return;
+              }
+
               onFeatureClick(feature.id);
             }}
             type="button"
@@ -3254,6 +3410,11 @@ function AiAssistantSection({
       </div>
       ) : null}
       {aiInsight ? <AiCaseInsightDashboard insight={aiInsight} /> : null}
+      <AiCaseStrategyResult
+        error={aiCaseStrategyError}
+        isLoading={isAiCaseStrategyLoading}
+        value={aiCaseStrategy}
+      />
       <AiCaseAnalysisResult
         error={aiCaseAnalysisError}
         isLoading={isAiCaseAnalysisLoading}
@@ -3277,6 +3438,40 @@ function AiAssistantSection({
         </div>
       ) : null}
     </section>
+  );
+}
+
+
+function AiCaseStrategyResult({
+  error,
+  isLoading,
+  value,
+}: {
+  error?: string;
+  isLoading: boolean;
+  value?: string;
+}) {
+  if (!isLoading && !error && !value) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <p className="text-sm font-black text-slate-900">{"AI \uB300\uC751\uC804\uB7B5 \uACB0\uACFC"}</p>
+      {isLoading ? (
+        <p className="mt-3 text-sm font-bold text-emerald-700">{"AI \uB300\uC751\uC804\uB7B5\uC744 \uC0DD\uC131\uD558\uB294 \uC911\uC785\uB2C8\uB2E4..."}</p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+          {error}
+        </p>
+      ) : null}
+      {value ? (
+        <pre className="mt-3 max-h-[560px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-emerald-100 bg-white p-4 font-sans text-sm leading-7 text-slate-800 shadow-inner">
+          {value}
+        </pre>
+      ) : null}
+    </div>
   );
 }
 
@@ -3484,7 +3679,7 @@ function AiOutputHistorySection({
         >
           {aiOutputHistoryTypeOptions.map((type) => (
             <option key={type} value={type}>
-              {type === "all" ? "전체" : type}
+              {type === "all" ? "??" : getAiOutputTypeLabel(type)}
             </option>
           ))}
         </select>
@@ -3520,7 +3715,7 @@ function AiOutputHistorySection({
               <button className="w-full text-left" onClick={() => onSelect(output.id)} type="button">
                 <div className="flex items-start justify-between gap-2">
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-700">
-                    {output.output_type}
+                    {getAiOutputTypeLabel(output.output_type)}
                   </span>
                   <span className="shrink-0 text-xs font-bold text-slate-500">
                     {formatDate(output.created_at)}
